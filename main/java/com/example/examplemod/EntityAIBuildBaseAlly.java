@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Set;
 
 import net.minecraft.block.Block;
+import net.minecraft.block.BlockBed;
 import net.minecraft.block.BlockBush;
 import net.minecraft.block.BlockCrops;
 import net.minecraft.block.BlockDoor;
@@ -15,6 +16,7 @@ import net.minecraft.block.BlockHugeMushroom;
 import net.minecraft.block.BlockLeaves;
 import net.minecraft.block.BlockLog;
 import net.minecraft.block.BlockSnow;
+import net.minecraft.block.BlockStairs;
 import net.minecraft.block.BlockTorch;
 import net.minecraft.block.BlockVine;
 import net.minecraft.block.state.IBlockState;
@@ -63,7 +65,7 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
 
     private enum Phase { SURVEY, CLEAR, CUT, FILL, GATHER_WOOD, BUILD, DONE }
 
-    private enum StepKind { FLOOR, WALL, WINDOW, ROOF, DOOR, LIGHT, CRAFTING, CHEST, FURNACE }
+    private enum StepKind { FOUNDATION, FLOOR, WALL, WINDOW, ROOF, ROOF_STAIRS, DOOR, LIGHT, CRAFTING, CHEST, FURNACE, BED }
 
     private static final class BuildStep {
         final BlockPos pos;
@@ -84,13 +86,18 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
     // 一回り大きい拠点に変更。窓・炉・追加の明かり・チェストも合わせて増やした。
     private static final int HOUSE_RADIUS = 4;          // 9x9
     private static final int WALL_HEIGHT = 4;
+    // [建築の強化: 切妻屋根] 平らな屋根はいかにも仮設小屋に見えるので、外周から
+    // 段々に持ち上げて板/丸石の階段ブロックで斜面を作る「切妻屋根」に変更。
+    // 高さは中央に立ったまま届く範囲に収まるよう2段までに抑えている。
+    private static final int ROOF_PITCH_LAYERS = 2;
     private static final int SURVEY_RADIUS = 18;
     private static final int MAX_CUT_ABOVE = 24;
     private static final int MAX_FILL_DEPTH = 8;
     private static final double REACH_SQ = 4.8 * 4.8;
-    // [建築の強化] 9x9・壁4段に大きくしたため、中央に立った時に一番遠い角（屋根・床含む）
-    // まで届く距離も合わせて広げる（届かないまま同じ場所で固まるのを防ぐ）。
-    private static final double BUILD_REACH_SQ = 7.6 * 7.6;
+    // [建築の強化] 9x9・壁4段・切妻屋根・土台に大きくしたため、中央に立った時に
+    // 一番遠い角（屋根の一番高い所、土台の四隅）まで届く距離も合わせて広げる
+    // （届かないまま同じ場所で固まるのを防ぐ）。
+    private static final double BUILD_REACH_SQ = 8.0 * 8.0;
     private static final double MOVE_SPEED = 1.0;
     private static final int STUCK_UNSTICK_TICKS = 30;
     private static final int STUCK_SKIP_TICKS = 160;
@@ -977,15 +984,15 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
             return hasOre(s, "logWood");
         }
     };
+    private static boolean isStoneBlock(Block b) {
+        return b == Blocks.COBBLESTONE || b == Blocks.STONEBRICK || b == Blocks.BRICK_BLOCK || b == Blocks.STONE
+                || b == Blocks.SANDSTONE || b == Blocks.MOSSY_COBBLESTONE;
+    }
+
     private static final ItemStackMatcher STONE = new ItemStackMatcher() {
         @Override
         public boolean matches(ItemStack s) {
-            if (s.isEmpty()) {
-                return false;
-            }
-            Block b = Block.getBlockFromItem(s.getItem());
-            return b == Blocks.COBBLESTONE || b == Blocks.STONEBRICK || b == Blocks.BRICK_BLOCK || b == Blocks.STONE
-                    || b == Blocks.SANDSTONE || b == Blocks.MOSSY_COBBLESTONE;
+            return !s.isEmpty() && isStoneBlock(Block.getBlockFromItem(s.getItem()));
         }
     };
 
@@ -1020,7 +1027,8 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
     private int structuralNeeded() {
         int n = 0;
         for (BuildStep s : this.buildQueue) {
-            if ((s.kind == StepKind.FLOOR || s.kind == StepKind.WALL || s.kind == StepKind.ROOF)
+            if ((s.kind == StepKind.FLOOR || s.kind == StepKind.WALL || s.kind == StepKind.ROOF
+                    || s.kind == StepKind.ROOF_STAIRS)
                     && !this.isPlacedStructural(this.entity.world, s)) {
                 n++;
             }
@@ -1041,6 +1049,14 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
         int floorY = this.targetY;
         int doorX = ox;
         int doorZ = oz - HOUSE_RADIUS;
+        // [建築の強化: 土台] 床の下に丸石類の土台を敷く（土の上に直接床が乗っている
+        // 「仮設小屋」感を無くす）。材料が足りない分はそのまま地面を活かすだけで、
+        // 家の完成自体は妨げない。
+        for (int dx = -HOUSE_RADIUS; dx <= HOUSE_RADIUS; dx++) {
+            for (int dz = -HOUSE_RADIUS; dz <= HOUSE_RADIUS; dz++) {
+                this.buildQueue.add(new BuildStep(new BlockPos(ox + dx, floorY - 1, oz + dz), StepKind.FOUNDATION, null));
+            }
+        }
         for (int dx = -HOUSE_RADIUS; dx <= HOUSE_RADIUS; dx++) {
             for (int dz = -HOUSE_RADIUS; dz <= HOUSE_RADIUS; dz++) {
                 this.buildQueue.add(new BuildStep(new BlockPos(ox + dx, floorY, oz + dz), StepKind.FLOOR, null));
@@ -1065,12 +1081,31 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
                 }
             }
         }
-        for (int dx = -HOUSE_RADIUS; dx <= HOUSE_RADIUS; dx++) {
-            for (int dz = -HOUSE_RADIUS; dz <= HOUSE_RADIUS; dz++) {
-                this.buildQueue.add(new BuildStep(new BlockPos(ox + dx, floorY + WALL_HEIGHT + 1, oz + dz), StepKind.ROOF, null));
+        // [建築の強化: 切妻屋根] 南北方向へ段々に狭めながら積み、外側の縁は階段ブロックで
+        // 斜面に、内側（次の段の下に隠れる部分と一番上の段）は平らな板/丸石で埋める。
+        int roofBaseY = floorY + WALL_HEIGHT + 1;
+        for (int layer = 0; layer <= ROOF_PITCH_LAYERS; layer++) {
+            int y = roofBaseY + layer;
+            int zMin = oz - HOUSE_RADIUS + layer;
+            int zMax = oz + HOUSE_RADIUS - layer;
+            boolean cap = layer == ROOF_PITCH_LAYERS;
+            for (int dx = -HOUSE_RADIUS; dx <= HOUSE_RADIUS; dx++) {
+                int x = ox + dx;
+                for (int z = zMin; z <= zMax; z++) {
+                    if (!cap && z == zMin) {
+                        this.buildQueue.add(new BuildStep(new BlockPos(x, y, z), StepKind.ROOF_STAIRS, EnumFacing.SOUTH));
+                    } else if (!cap && z == zMax) {
+                        this.buildQueue.add(new BuildStep(new BlockPos(x, y, z), StepKind.ROOF_STAIRS, EnumFacing.NORTH));
+                    } else {
+                        this.buildQueue.add(new BuildStep(new BlockPos(x, y, z), StepKind.ROOF, null));
+                    }
+                }
             }
         }
         this.buildQueue.add(new BuildStep(new BlockPos(doorX, floorY + 1, doorZ), StepKind.DOOR, EnumFacing.SOUTH));
+        // [建築の強化: ベッド] 拠点なのに寝る場所が無かったので追加。扉・家具から離れた
+        // 南西側の空きスペースに置く（北側は作業台/炉/チェスト、扉は南中央で埋まっている）。
+        this.buildQueue.add(new BuildStep(new BlockPos(ox - 3, floorY + 1, oz - 1), StepKind.BED, EnumFacing.NORTH));
         // [建築の強化: 明かり] 以前は東西の壁だけだったので、北側にも1本追加して部屋全体を照らす。
         this.buildQueue.add(new BuildStep(new BlockPos(ox - HOUSE_RADIUS + 1, floorY + 2, oz), StepKind.LIGHT, EnumFacing.EAST));
         this.buildQueue.add(new BuildStep(new BlockPos(ox + HOUSE_RADIUS - 1, floorY + 2, oz), StepKind.LIGHT, EnumFacing.WEST));
@@ -1086,7 +1121,7 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
         if (this.buildQueue.isEmpty()) {
             this.planHouse();
             // 材料の見込み: 丸石類＋板材（原木は板材に換算）で足りなければ木を切りに行く
-            int need = this.structuralNeeded() + 30; // ドア・作業台・炉・チェスト2つ・明かり3本・窓の分
+            int need = this.structuralNeeded() + 30; // ドア・ベッド・作業台・炉・チェスト2つ・明かり3本・窓の分
             int have = this.countAll(STONE) + this.countAll(PLANKS) + this.countAll(LOGS) * 4;
             if (have < need && this.woodTrips < 4) {
                 this.woodTrips++;
@@ -1127,7 +1162,8 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
                 this.say("[拠点建設] 材料が足りず、家の一部が未完成です。建材を渡してシャベルをもう一度渡すと、続きを仕上げます。");
             } else {
                 this.say("[拠点建設] 拠点（" + this.siteOrigin.getX() + ", " + (this.targetY + 1) + ", " + this.siteOrigin.getZ()
-                        + "）が完成しました！ ドア・窓・作業台・炉・チェスト2つ・明かり3本付きの一回り大きな拠点です。");
+                        + "）が完成しました！ 石の土台・切妻屋根・窓・ベッド・作業台・炉・チェスト2つ・明かり3本付きの、"
+                        + "一回り大きくて本格的な拠点です。");
             }
             this.setPhase(Phase.DONE);
         }
@@ -1148,6 +1184,12 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
             case ROOF:
                 this.placeStructural(w, step);
                 break;
+            case FOUNDATION:
+                this.placeFoundation(w, step);
+                break;
+            case ROOF_STAIRS:
+                this.placeRoofStairs(w, step);
+                break;
             case WINDOW:
                 this.placeWindow(w, step);
                 break;
@@ -1159,6 +1201,9 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
                 break;
             case FURNACE:
                 this.placeFurnace(w, step);
+                break;
+            case BED:
+                this.placeBed(w, step);
                 break;
             case CRAFTING:
                 if (w.isAirBlock(step.pos) && (this.takeAny(new ItemStackMatcher() {
@@ -1288,6 +1333,98 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
         this.setBlock(w, step.pos, Blocks.FURNACE.getDefaultState());
     }
 
+    /**
+     * [建築の強化: 土台] 床の真下を丸石類に張り替える。すでに丸石/石系の地面なら
+     * 何もしない（せっかくの地形をわざわざ壊さない）。材料が無ければ地面をそのまま
+     * 活かすだけで、家の完成自体は妨げない。
+     */
+    private void placeFoundation(World w, BuildStep step) {
+        IBlockState cur = w.getBlockState(step.pos);
+        if (isStoneBlock(cur.getBlock()) || cur.getMaterial().isLiquid()) {
+            return;
+        }
+        ItemStack mat = this.takeAny(STONE);
+        if (mat.isEmpty()) {
+            return;
+        }
+        Block b = Block.getBlockFromItem(mat.getItem());
+        this.setBlock(w, step.pos, b.getStateFromMeta(mat.getMetadata()));
+    }
+
+    /**
+     * [建築の強化: 切妻屋根] 屋根の斜面（縁）を板/丸石の階段ブロックで作る。
+     * 板材が無ければ丸石類の階段で代用する。
+     */
+    private void placeRoofStairs(World w, BuildStep step) {
+        if (this.isPlacedStructural(w, step)) {
+            return;
+        }
+        IBlockState cur = w.getBlockState(step.pos);
+        if (!w.isAirBlock(step.pos) && !this.isVegetation(cur) && !cur.getMaterial().isReplaceable()) {
+            return;
+        }
+        Block stairsBlock;
+        if (this.takePlanksOne()) {
+            stairsBlock = Blocks.OAK_STAIRS;
+        } else if (!this.takeAny(STONE).isEmpty()) {
+            stairsBlock = Blocks.STONE_STAIRS;
+        } else {
+            this.houseIncomplete = true;
+            return;
+        }
+        if (!w.isAirBlock(step.pos)) {
+            w.setBlockToAir(step.pos);
+        }
+        IBlockState state = stairsBlock.getDefaultState()
+                .withProperty(BlockStairs.FACING, step.facing)
+                .withProperty(BlockStairs.HALF, BlockStairs.EnumHalf.BOTTOM);
+        this.setBlock(w, step.pos, state);
+    }
+
+    /**
+     * [建築の強化: ベッド] 拠点に寝る場所を用意する。持ち物にベッドがあればそれを、
+     * 無ければ板材3個で代用して置く。置く場所が塞がっていれば諦める（家の完成は妨げない）。
+     */
+    private void placeBed(World w, BuildStep step) {
+        // [色付きベッド対応] 1.12はベッドが色ごとに別ブロック/別アイテムなので、
+        // 特定の色を決め打ちで判定すると持ち物にある別色のベッドを見逃す。
+        // 検出は instanceof で色を問わず判定し、無ければ白ベッドを標準で置く。
+        BlockPos foot = step.pos;
+        BlockPos head = foot.offset(step.facing);
+        if (w.getBlockState(foot).getBlock() instanceof BlockBed || w.getBlockState(head).getBlock() instanceof BlockBed) {
+            return;
+        }
+        if (!w.isAirBlock(foot) || !w.isAirBlock(head)) {
+            return;
+        }
+        ItemStack bed = this.takeAny(new ItemStackMatcher() {
+            @Override
+            public boolean matches(ItemStack s) {
+                return !s.isEmpty() && s.getItem() instanceof net.minecraft.item.ItemBed;
+            }
+        });
+        Block bedBlock = Blocks.WHITE_BED;
+        if (!bed.isEmpty()) {
+            Block fromItem = Block.getBlockFromItem(bed.getItem());
+            if (fromItem instanceof BlockBed) {
+                bedBlock = fromItem;
+            }
+        } else if (!this.takePlanks(3)) {
+            return;
+        }
+        IBlockState footState = bedBlock.getDefaultState()
+                .withProperty(BlockBed.FACING, step.facing)
+                .withProperty(BlockBed.PART, BlockBed.EnumPartType.FOOT);
+        IBlockState headState = bedBlock.getDefaultState()
+                .withProperty(BlockBed.FACING, step.facing)
+                .withProperty(BlockBed.PART, BlockBed.EnumPartType.HEAD);
+        w.setBlockState(foot, footState, 3);
+        w.setBlockState(head, headState, 3);
+        w.playSound(null, foot, SoundEvents.BLOCK_WOOD_PLACE, SoundCategory.BLOCKS, 0.8F, 1.0F);
+        this.entity.swingArm(EnumHand.MAIN_HAND);
+        AllySkills.addXp(this.entity, AllySkills.Skill.BUILDING, 1);
+    }
+
     private void placeDoor(World w, BuildStep step) {
         if (!w.isAirBlock(step.pos) || !w.isAirBlock(step.pos.up())) {
             return;
@@ -1406,7 +1543,13 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
 
     private int structuralNeededEstimate() {
         int side = HOUSE_RADIUS * 2 + 1;
-        return side * side * 2 + (side * 4 - 4) * WALL_HEIGHT + 30;
+        int floor = side * side;
+        int roof = 0;
+        for (int layer = 0; layer <= ROOF_PITCH_LAYERS; layer++) {
+            roof += side * (2 * (HOUSE_RADIUS - layer) + 1);
+        }
+        int walls = (side * 4 - 4) * WALL_HEIGHT;
+        return floor + roof + walls + 30;
     }
 
     /** 近くの木の根元（一番下の原木）。敷地の外、禁止エリア外、伐採エリアの指定があればその中。 */
