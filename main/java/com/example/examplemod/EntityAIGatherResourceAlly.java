@@ -160,6 +160,9 @@ public class EntityAIGatherResourceAlly extends EntityAIBase {
     private final Deque<BlockPos> plannedTargets = new ArrayDeque<BlockPos>();
     private final Set<BlockPos> clusterVisited = new HashSet<BlockPos>();
 
+    /** [苗木の植え直し] 今切っている木の根元（一番下の原木）の位置。木を切り終えたら苗木を植える。 */
+    private BlockPos treeBaseStump;
+
     /** Requirement 2 (scaffolding). */
     private final Deque<BlockPos> scaffoldStack = new ArrayDeque<BlockPos>();
     private final List<ItemStack> scaffoldMaterial = new ArrayList<ItemStack>();
@@ -711,10 +714,18 @@ public class EntityAIGatherResourceAlly extends EntityAIBase {
         this.obstructionCheckCooldown = OBSTRUCTION_CHECK_INTERVAL_TICKS;
         World world = this.entity.getEntityWorld();
         BlockPos base = new BlockPos(this.entity);
+        // [木こり: 葉が残る不具合の修正] 幹を切り倒した直後、頭上に残る葉の塊は
+        // 従来ここでは足元と頭上1マスしか片付けなかったため、切った木のほとんどの
+        // 葉が回収されずに浮いたまま残っていた（苗木・りんごも一切落ちない）。
+        // 頭上方向へ数マス分の縦の列も片付けるようにして、通常の高さの木なら
+        // 幹を切り終えた時点でその場から届く葉がほぼ回収される。
         int[][] offsets = {
                 {0, 0, 0}, {0, 1, 0},
                 {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1},
                 {1, 1, 0}, {-1, 1, 0}, {0, 1, 1}, {0, 1, -1},
+                {0, 2, 0}, {0, 3, 0}, {0, 4, 0}, {0, 5, 0},
+                {1, 2, 0}, {-1, 2, 0}, {0, 2, 1}, {0, 2, -1},
+                {1, 3, 0}, {-1, 3, 0}, {0, 3, 1}, {0, 3, -1},
         };
         for (int[] offset : offsets) {
             BlockPos pos = base.add(offset[0], offset[1], offset[2]);
@@ -1058,7 +1069,47 @@ public class EntityAIGatherResourceAlly extends EntityAIBase {
             return;
         }
 
+        if ("axe".equals(this.activeClass())) {
+            // [苗木の植え直し] この木の原木は全部切り終えた -- 根元に苗木を植える。
+            this.tryReplantSapling(world);
+        }
         this.continueGatheringOrGoHome();
+    }
+
+    /**
+     * [苗木の植え直し] 木を根元から切り終えた直後に呼ばれる。切った根元の場所が
+     * まだ空気で、その下が草/土のままなら、持ち物の中の苗木（葉を片付けた時に
+     * 落ちた物）を1つ使って植え直す。苗木が無ければ何もしない。
+     */
+    private void tryReplantSapling(World world) {
+        BlockPos stump = this.treeBaseStump;
+        this.treeBaseStump = null;
+        if (stump == null || !world.isAirBlock(stump)) {
+            return;
+        }
+        Block below = world.getBlockState(stump.down()).getBlock();
+        if (below != Blocks.GRASS && below != Blocks.DIRT) {
+            return;
+        }
+        java.util.Iterator<ItemStack> it = this.carried.iterator();
+        while (it.hasNext()) {
+            ItemStack stack = it.next();
+            if (stack.isEmpty()) {
+                it.remove();
+                continue;
+            }
+            Block block = Block.getBlockFromItem(stack.getItem());
+            if (!(block instanceof net.minecraft.block.BlockSapling)) {
+                continue;
+            }
+            world.setBlockState(stump, block.getStateFromMeta(stack.getMetadata()), 3);
+            stack.shrink(1);
+            if (stack.isEmpty()) {
+                it.remove();
+            }
+            this.tellOwner("木を切った後に苗木を植えておきました。");
+            return;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -2270,6 +2321,11 @@ public class EntityAIGatherResourceAlly extends EntityAIBase {
                 this.plannedTargets.clear();
                 this.plannedTargets.addAll(rest);
                 seed = lowest;
+            }
+            if ("axe".equals(this.activeClass())) {
+                // [苗木の植え直し] この木を根元（一番下の原木）から切り終えたら、
+                // 切った場所に苗木を植え直すための位置として覚えておく。
+                this.treeBaseStump = seed;
             }
             // [重複防止] この木/鉱脈は自分の担当として予約（他の味方は別の所へ）
             TargetRegistry.claim(this.entity, seed, 1200);

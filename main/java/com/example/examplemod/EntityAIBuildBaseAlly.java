@@ -63,7 +63,7 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
 
     private enum Phase { SURVEY, CLEAR, CUT, FILL, GATHER_WOOD, BUILD, DONE }
 
-    private enum StepKind { FLOOR, WALL, ROOF, DOOR, LIGHT, CRAFTING, CHEST }
+    private enum StepKind { FLOOR, WALL, WINDOW, ROOF, DOOR, LIGHT, CRAFTING, CHEST, FURNACE }
 
     private static final class BuildStep {
         final BlockPos pos;
@@ -78,15 +78,19 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
         }
     }
 
-    private static final int SITE_RADIUS = 6;           // 13x13
+    private static final int SITE_RADIUS = 7;           // 15x15
     private static final int SLOPE_RING = 2;            // 外周のなだらかな斜面
-    private static final int HOUSE_RADIUS = 3;          // 7x7
-    private static final int WALL_HEIGHT = 3;
+    // [建築の強化] 7x7・壁3段の小屋は狭すぎるとの声を受けて、9x9・壁4段の
+    // 一回り大きい拠点に変更。窓・炉・追加の明かり・チェストも合わせて増やした。
+    private static final int HOUSE_RADIUS = 4;          // 9x9
+    private static final int WALL_HEIGHT = 4;
     private static final int SURVEY_RADIUS = 18;
     private static final int MAX_CUT_ABOVE = 24;
     private static final int MAX_FILL_DEPTH = 8;
     private static final double REACH_SQ = 4.8 * 4.8;
-    private static final double BUILD_REACH_SQ = 5.6 * 5.6;
+    // [建築の強化] 9x9・壁4段に大きくしたため、中央に立った時に一番遠い角（屋根・床含む）
+    // まで届く距離も合わせて広げる（届かないまま同じ場所で固まるのを防ぐ）。
+    private static final double BUILD_REACH_SQ = 7.6 * 7.6;
     private static final double MOVE_SPEED = 1.0;
     private static final int STUCK_UNSTICK_TICKS = 30;
     private static final int STUCK_SKIP_TICKS = 160;
@@ -1042,6 +1046,8 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
                 this.buildQueue.add(new BuildStep(new BlockPos(ox + dx, floorY, oz + dz), StepKind.FLOOR, null));
             }
         }
+        // [建築の強化: 窓] 東西北の壁の中央（南は扉があるので対象外）に採光用の窓を開ける。
+        int windowY = floorY + 2;
         for (int y = floorY + 1; y <= floorY + WALL_HEIGHT; y++) {
             for (int dx = -HOUSE_RADIUS; dx <= HOUSE_RADIUS; dx++) {
                 for (int dz = -HOUSE_RADIUS; dz <= HOUSE_RADIUS; dz++) {
@@ -1053,7 +1059,9 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
                     if (x == doorX && z == doorZ && y <= floorY + 2) {
                         continue;
                     }
-                    this.buildQueue.add(new BuildStep(new BlockPos(x, y, z), StepKind.WALL, null));
+                    boolean windowSpot = y == windowY
+                            && ((dx == 0 && Math.abs(dz) == HOUSE_RADIUS) || (dz == 0 && Math.abs(dx) == HOUSE_RADIUS));
+                    this.buildQueue.add(new BuildStep(new BlockPos(x, y, z), windowSpot ? StepKind.WINDOW : StepKind.WALL, null));
                 }
             }
         }
@@ -1063,17 +1071,22 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
             }
         }
         this.buildQueue.add(new BuildStep(new BlockPos(doorX, floorY + 1, doorZ), StepKind.DOOR, EnumFacing.SOUTH));
+        // [建築の強化: 明かり] 以前は東西の壁だけだったので、北側にも1本追加して部屋全体を照らす。
         this.buildQueue.add(new BuildStep(new BlockPos(ox - HOUSE_RADIUS + 1, floorY + 2, oz), StepKind.LIGHT, EnumFacing.EAST));
         this.buildQueue.add(new BuildStep(new BlockPos(ox + HOUSE_RADIUS - 1, floorY + 2, oz), StepKind.LIGHT, EnumFacing.WEST));
+        this.buildQueue.add(new BuildStep(new BlockPos(ox, floorY + 2, oz + HOUSE_RADIUS - 1), StepKind.LIGHT, EnumFacing.SOUTH));
         this.buildQueue.add(new BuildStep(new BlockPos(ox - 2, floorY + 1, oz + HOUSE_RADIUS - 1), StepKind.CRAFTING, null));
+        this.buildQueue.add(new BuildStep(new BlockPos(ox, floorY + 1, oz + HOUSE_RADIUS - 1), StepKind.FURNACE, null));
         this.buildQueue.add(new BuildStep(new BlockPos(ox + 2, floorY + 1, oz + HOUSE_RADIUS - 1), StepKind.CHEST, null));
+        // [建築の強化: 収納] チェストをもう1つ、扉のそば（出入り時に使いやすい場所）に増設。
+        this.buildQueue.add(new BuildStep(new BlockPos(ox + 2, floorY + 1, oz - HOUSE_RADIUS + 1), StepKind.CHEST, null));
     }
 
     private void tickBuild(World w) {
         if (this.buildQueue.isEmpty()) {
             this.planHouse();
             // 材料の見込み: 丸石類＋板材（原木は板材に換算）で足りなければ木を切りに行く
-            int need = this.structuralNeeded() + 16; // ドア・作業台・チェスト・棒の分
+            int need = this.structuralNeeded() + 30; // ドア・作業台・炉・チェスト2つ・明かり3本・窓の分
             int have = this.countAll(STONE) + this.countAll(PLANKS) + this.countAll(LOGS) * 4;
             if (have < need && this.woodTrips < 4) {
                 this.woodTrips++;
@@ -1114,7 +1127,7 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
                 this.say("[拠点建設] 材料が足りず、家の一部が未完成です。建材を渡してシャベルをもう一度渡すと、続きを仕上げます。");
             } else {
                 this.say("[拠点建設] 拠点（" + this.siteOrigin.getX() + ", " + (this.targetY + 1) + ", " + this.siteOrigin.getZ()
-                        + "）が完成しました！ ドア・作業台・チェスト・明かり付きです。");
+                        + "）が完成しました！ ドア・窓・作業台・炉・チェスト2つ・明かり3本付きの一回り大きな拠点です。");
             }
             this.setPhase(Phase.DONE);
         }
@@ -1135,11 +1148,17 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
             case ROOF:
                 this.placeStructural(w, step);
                 break;
+            case WINDOW:
+                this.placeWindow(w, step);
+                break;
             case DOOR:
                 this.placeDoor(w, step);
                 break;
             case LIGHT:
                 this.placeTorch(w, step);
+                break;
+            case FURNACE:
+                this.placeFurnace(w, step);
                 break;
             case CRAFTING:
                 if (w.isAirBlock(step.pos) && (this.takeAny(new ItemStackMatcher() {
@@ -1211,6 +1230,62 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
     private boolean takePlanksOne() {
         this.craftPlanks(1);
         return !this.takeAny(PLANKS).isEmpty();
+    }
+
+    /** [建築の強化: 窓] 板ガラスがあれば窓を、無ければ壁材で塞ぐ（雨風を防ぐ方を優先）。 */
+    private void placeWindow(World w, BuildStep step) {
+        if (this.isPlacedStructural(w, step)) {
+            return;
+        }
+        IBlockState cur = w.getBlockState(step.pos);
+        if (!w.isAirBlock(step.pos) && !this.isVegetation(cur) && !cur.getMaterial().isReplaceable()) {
+            return; // 何か別の物がある -- 壊さない
+        }
+        if (!w.isAirBlock(step.pos)) {
+            w.setBlockToAir(step.pos);
+        }
+        ItemStack glass = this.takeAny(new ItemStackMatcher() {
+            @Override
+            public boolean matches(ItemStack s) {
+                return !s.isEmpty() && Block.getBlockFromItem(s.getItem()) == Blocks.GLASS;
+            }
+        });
+        if (!glass.isEmpty()) {
+            this.setBlock(w, step.pos, Blocks.GLASS.getDefaultState());
+            return;
+        }
+        ItemStack mat = this.takeAny(STONE);
+        if (mat.isEmpty() && this.takePlanksOne()) {
+            mat = new ItemStack(Blocks.PLANKS);
+        }
+        if (mat.isEmpty()) {
+            this.houseIncomplete = true;
+            return;
+        }
+        Block b = Block.getBlockFromItem(mat.getItem());
+        this.setBlock(w, step.pos, b.getStateFromMeta(mat.getMetadata()));
+    }
+
+    /** [建築の強化: 炉] 丸石類8個（持ち物に完成品があればそれ）で炉を設置する。 */
+    private void placeFurnace(World w, BuildStep step) {
+        if (this.isPlacedStructural(w, step) || !w.isAirBlock(step.pos)) {
+            return;
+        }
+        ItemStack furnace = this.takeAny(new ItemStackMatcher() {
+            @Override
+            public boolean matches(ItemStack s) {
+                return s.getItem() == Item.getItemFromBlock(Blocks.FURNACE);
+            }
+        });
+        if (furnace.isEmpty()) {
+            if (this.countAll(STONE) < 8) {
+                return; // 丸石類が足りない -- 材料が集まったら次のTickで置く
+            }
+            for (int i = 0; i < 8; i++) {
+                this.takeAny(STONE);
+            }
+        }
+        this.setBlock(w, step.pos, Blocks.FURNACE.getDefaultState());
     }
 
     private void placeDoor(World w, BuildStep step) {
@@ -1331,7 +1406,7 @@ public class EntityAIBuildBaseAlly extends EntityAIBase {
 
     private int structuralNeededEstimate() {
         int side = HOUSE_RADIUS * 2 + 1;
-        return side * side * 2 + (side * 4 - 4) * WALL_HEIGHT + 16;
+        return side * side * 2 + (side * 4 - 4) * WALL_HEIGHT + 30;
     }
 
     /** 近くの木の根元（一番下の原木）。敷地の外、禁止エリア外、伐採エリアの指定があればその中。 */
