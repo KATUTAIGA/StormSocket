@@ -17,6 +17,8 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.common.util.FakePlayerFactory;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * [HBMのツルハシ等の特殊機能を味方も使う]
@@ -31,6 +33,8 @@ import net.minecraftforge.common.util.FakePlayerFactory;
  * 精錬・粉砕などドロップを別物に変える能力も、クエストの必要品と食い違うので使わない。</p>
  */
 final class HBMToolSupport {
+
+    private static final Logger LOGGER = LogManager.getLogger("examplemod");
 
     private HBMToolSupport() {
     }
@@ -94,27 +98,52 @@ final class HBMToolSupport {
         } catch (Throwable ignored) {
             // 設定の読めない道具 -- 今のモードのまま使う
         }
-        FakePlayer fake = FakePlayerFactory.getMinecraft((WorldServer) ally.world);
-        fake.setPosition(ally.posX, ally.posY, ally.posZ);
-        fake.rotationYaw = ally.rotationYaw;
-        fake.rotationPitch = ally.rotationPitch;
-        fake.setHeldItem(EnumHand.MAIN_HAND, tool);
-        boolean ok;
+        // [味方が消える不具合の修正] HBM の能力（鉱脈一括採掘など）を偽プレイヤー経由で
+        // 発動するこの下の処理は、HBM 側の内部実装に直接依存している。ここで何らかの
+        // 例外（対応していない道具・想定外の内部状態など）が発生すると、以前は
+        // 何も捕まえずにそのまま呼び出し元（採掘AI）まで例外が伝播していた。
+        // Minecraft/Forge はエンティティの Tick 中に例外が起きると、サーバー全体を
+        // 落とさないために「そのエンティティだけを黙って World から取り除く」ため、
+        // これが原因でHBMのツルハシ等を持たせた味方が何も言わずに消えていた。
+        // 能力発動全体を確実に捕まえ、失敗時は普通の採掘にフォールバックする。
+        FakePlayer fake;
         try {
-            ok = fake.interactionManager.tryHarvestBlock(pos);
-        } finally {
-            fake.setHeldItem(EnumHand.MAIN_HAND, ItemStack.EMPTY);
+            fake = FakePlayerFactory.getMinecraft((WorldServer) ally.world);
+        } catch (Throwable t) {
+            LOGGER.warn("HBM ability harvest: could not get a fake player, falling back to normal mining", t);
+            return false;
+        }
+        boolean ok = false;
+        try {
+            fake.setPosition(ally.posX, ally.posY, ally.posZ);
+            fake.rotationYaw = ally.rotationYaw;
+            fake.rotationPitch = ally.rotationPitch;
+            fake.setHeldItem(EnumHand.MAIN_HAND, tool);
+            try {
+                ok = fake.interactionManager.tryHarvestBlock(pos);
+            } finally {
+                fake.setHeldItem(EnumHand.MAIN_HAND, ItemStack.EMPTY);
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("HBM ability harvest failed for {} at {}, falling back to normal mining",
+                    tool.isEmpty() ? "?" : tool.getItem().getRegistryName(), pos, t);
+            return false;
         }
         if (tool.isEmpty()) {
             ally.setHeldItem(EnumHand.MAIN_HAND, ItemStack.EMPTY); // 壊れた
         }
-        // 能力で連鎖的に掘られたブロックの分も含めて回収する
-        AxisAlignedBB area = new AxisAlignedBB(pos).grow(8.0D).union(ally.getEntityBoundingBox().grow(3.0D));
-        for (EntityItem item : ally.world.getEntitiesWithinAABB(EntityItem.class, area)) {
-            if (item.isEntityAlive() && !item.getItem().isEmpty() && item.ticksExisted < 5) {
-                into.add(item.getItem().copy());
-                item.setDead();
+        try {
+            // 能力で連鎖的に掘られたブロックの分も含めて回収する
+            AxisAlignedBB area = new AxisAlignedBB(pos).grow(8.0D).union(ally.getEntityBoundingBox().grow(3.0D));
+            for (EntityItem item : ally.world.getEntitiesWithinAABB(EntityItem.class, area)) {
+                if (item.isEntityAlive() && !item.getItem().isEmpty() && item.ticksExisted < 5) {
+                    into.add(item.getItem().copy());
+                    item.setDead();
+                }
             }
+        } catch (Throwable t) {
+            // ブロック自体はもう掘れているので、拾い忘れがあっても採掘自体は成功のまま扱う
+            LOGGER.warn("HBM ability harvest: drop pickup failed at {}", pos, t);
         }
         return ok;
     }

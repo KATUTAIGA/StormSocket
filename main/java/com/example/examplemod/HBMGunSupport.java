@@ -22,6 +22,8 @@ import net.minecraft.entity.helpful.EntityFriendlyCreature;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.world.World;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * [HBMの銃が実弾を撃たない・全部同じ弾になる不具合の修正]
@@ -40,6 +42,8 @@ import net.minecraft.world.World;
  * 弾薬が無ければ撃たない。</p>
  */
 final class HBMGunSupport {
+
+    private static final Logger LOGGER = LogManager.getLogger("examplemod");
 
     private static final String KEY_ROUNDS = "EngenderRounds";
     private static final String KEY_TYPE = "EngenderAmmoType";
@@ -229,47 +233,61 @@ final class HBMGunSupport {
      * @return 次に撃てるまでの待ちTick（リロードした時はリロード時間を含む）。弾切れなら {@link #NO_AMMO}
      */
     static int fire(EntityFriendlyCreature shooter, ItemStack gun) {
-        List<AmmoKind> kinds = kinds(gun);
-        if (kinds.isEmpty()) {
-            return NO_AMMO;
-        }
-        NBTTagCompound tag = tag(gun);
-        boolean wasEmpty = tag.getInteger(KEY_ROUNDS) <= 0;
-        if (reloadIfEmpty(shooter, gun, kinds) <= 0) {
-            return NO_AMMO;
-        }
-        if (wasEmpty) {
-            return reloadTicks(gun); // 装填動作ぶん待ってから撃つ
-        }
-        AmmoKind kind = kinds.get(tag.getInteger(KEY_TYPE));
-        World world = shooter.world;
-        int delay;
-        if (kind.oldConfigId >= 0) {
-            BulletConfiguration bc = BulletConfigSyncingUtil.pullConfig(kind.oldConfigId);
-            if (bc == null) {
+        // [味方が消える不具合の修正] HBMToolSupport の採掘と同じ理由: ここは銃の内部
+        // 構成（設定ID・レシーバー・マガジン等）を直接読みに行くため、対応していない
+        // 銃や壊れた設定に当たると例外を投げうる。isAmmoFor/exampleAmmo は元から
+        // catch していたのに、実際に撃つこの fire() だけ無防備だったため、例外が
+        // そのままエンティティTickまで伝播し、Forge が黒画面(サーバー全体停止)を
+        // 避けるためにその味方エンティティだけを静かに World から取り除いていた
+        // （＝ログにしか残らず、見た目には「何もせず消える」）。ここも必ず捕まえて
+        // NO_AMMO 扱いにフォールバックする。
+        try {
+            List<AmmoKind> kinds = kinds(gun);
+            if (kinds.isEmpty()) {
                 return NO_AMMO;
             }
-            int pellets = bc.bulletsMin + (bc.bulletsMax > bc.bulletsMin ? world.rand.nextInt(bc.bulletsMax - bc.bulletsMin + 1) : 0);
-            for (int i = 0; i < Math.max(1, pellets); i++) {
-                world.spawnEntity(new EntityBulletBase(world, kind.oldConfigId, shooter));
+            NBTTagCompound tag = tag(gun);
+            boolean wasEmpty = tag.getInteger(KEY_ROUNDS) <= 0;
+            if (reloadIfEmpty(shooter, gun, kinds) <= 0) {
+                return NO_AMMO;
             }
-            OldCfg cfg = oldCfg(gun);
-            delay = cfg == null ? 10 : Math.max(1, cfg.rateOfFire);
-        } else {
-            Receiver r = primaryReceiver(gun);
-            BulletConfig bc = kind.newConfig;
-            float damage = (r == null ? 5.0F : r.getBaseDamage(gun));
-            float spread = (r == null ? 0.0F : r.getInnateSpread(gun));
-            int pellets = bc.projectilesMin + (bc.projectilesMax > bc.projectilesMin
-                    ? world.rand.nextInt(bc.projectilesMax - bc.projectilesMin + 1) : 0);
-            for (int i = 0; i < Math.max(1, pellets); i++) {
-                world.spawnEntity(new EntityBulletBaseMK4(shooter, bc, damage, spread, 0.0D, 0.0D, 0.0D));
+            if (wasEmpty) {
+                return reloadTicks(gun); // 装填動作ぶん待ってから撃つ
             }
-            delay = r == null ? 10 : Math.max(1, r.getDelayAfterFire(gun));
+            AmmoKind kind = kinds.get(tag.getInteger(KEY_TYPE));
+            World world = shooter.world;
+            int delay;
+            if (kind.oldConfigId >= 0) {
+                BulletConfiguration bc = BulletConfigSyncingUtil.pullConfig(kind.oldConfigId);
+                if (bc == null) {
+                    return NO_AMMO;
+                }
+                int pellets = bc.bulletsMin + (bc.bulletsMax > bc.bulletsMin ? world.rand.nextInt(bc.bulletsMax - bc.bulletsMin + 1) : 0);
+                for (int i = 0; i < Math.max(1, pellets); i++) {
+                    world.spawnEntity(new EntityBulletBase(world, kind.oldConfigId, shooter));
+                }
+                OldCfg cfg = oldCfg(gun);
+                delay = cfg == null ? 10 : Math.max(1, cfg.rateOfFire);
+            } else {
+                Receiver r = primaryReceiver(gun);
+                BulletConfig bc = kind.newConfig;
+                float damage = (r == null ? 5.0F : r.getBaseDamage(gun));
+                float spread = (r == null ? 0.0F : r.getInnateSpread(gun));
+                int pellets = bc.projectilesMin + (bc.projectilesMax > bc.projectilesMin
+                        ? world.rand.nextInt(bc.projectilesMax - bc.projectilesMin + 1) : 0);
+                for (int i = 0; i < Math.max(1, pellets); i++) {
+                    world.spawnEntity(new EntityBulletBaseMK4(shooter, bc, damage, spread, 0.0D, 0.0D, 0.0D));
+                }
+                delay = r == null ? 10 : Math.max(1, r.getDelayAfterFire(gun));
+            }
+            tag.setInteger(KEY_ROUNDS, tag.getInteger(KEY_ROUNDS) - 1);
+            playFireSound(shooter, gun);
+            return delay;
+        } catch (Throwable t) {
+            LOGGER.warn("HBM gun fire failed for {}, treating as out of ammo",
+                    gun.isEmpty() ? "?" : gun.getItem().getRegistryName(), t);
+            return NO_AMMO;
         }
-        tag.setInteger(KEY_ROUNDS, tag.getInteger(KEY_ROUNDS) - 1);
-        playFireSound(shooter, gun);
-        return delay;
     }
 
     /** [発射音] その銃自身に設定された発射音を鳴らす（無ければ汎用の銃声）。 */
