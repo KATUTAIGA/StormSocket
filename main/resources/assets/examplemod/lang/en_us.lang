@@ -1,0 +1,4 @@
+item.vehicle_waypoint.name=Vehicle Waypoint Beacon
+examplemod.gui.vehicle_waypoint.title=Set Vehicle Destination
+examplemod.gui.vehicle_waypoint.set=Set
+item.ally_area_marker.name=Ally Area Marker

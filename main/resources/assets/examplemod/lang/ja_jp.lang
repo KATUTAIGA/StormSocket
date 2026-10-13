@@ -1,0 +1,4 @@
+item.vehicle_waypoint.name=車両目的地ビーコン
+examplemod.gui.vehicle_waypoint.title=車両の目的地を設定
+examplemod.gui.vehicle_waypoint.set=決定
+item.ally_area_marker.name=味方エリアマーカー
