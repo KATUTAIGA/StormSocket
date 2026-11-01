@@ -39940,10 +39940,11 @@ const isOff = (v) => v === 0 || v === 'none' || v === undefined || v === null;
 
 /* ---------- 1) 魔改造 ---------- */
 NT.STY.mad = { name: '魔改造', boost: 0, p: {} };
-NT.makeMad = function (base) {
+NT.makeMad = function (base, opt) {
+  opt = opt || {};
   const T = HW.TUNE, X = HW.X; if (!T || !X || !base) return null;
   try {
-    const t = T.blankTune(); t.xbFull = 1;
+    const t = opt.t0 ? JSON.parse(JSON.stringify(opt.t0)) : T.blankTune(); t.xbFull = 1;
     const cats = () => T.catsOf(base, t), tags = T.tagsOf(base, t);
     if (tags.rot || tags.dsl || tags.ev || tags.hv || base.type === 'ev' || base.type === 'cvt') return null;      // ロータリー・ディーゼル・電動は別の計算なので対象外
     let schema = null; const sc = () => schema || (schema = T.advSchema(T.applySwap(base, null), base, T.buildSpec(base, t)));
@@ -39952,7 +39953,7 @@ NT.makeMad = function (base) {
     // 吸排気・点火・ECU（効き目の大きいもの）
     for (const k of ['intake', 'exhaust', 'header', 'catalyst', 'manifold', 'ignition', 'launch', 'boostctl', 'wastegate', 'weight', 'cabin', 'panel', 'glass', 'torqueconv']) by(k, (o) => (o.pm || 1) * (1 + (o.hi || 0)) + (o.df || 1) - 1 - (o.dm || 0) / 400 + (o.stall || 0) / 1e5 + (o.ls || 0) * 0.2);
     // 燃料: メタノールか E85
-    const meth = Math.random() < 0.55; by('fuel', (o) => (meth ? /メタノール（Methanol）/ : /E85/).test(o.name || '') ? 1 : 0);
+    const meth = opt.meth !== undefined ? opt.meth : Math.random() < 0.55; by('fuel', (o) => (meth ? /メタノール（Methanol）/ : /E85/).test(o.name || '') ? 1 : 0);
     if (HW.FUELX) try { HW.FUELX.plan(base, t, T, true); } catch (e) { /* なし */ }
     // エンジンの内部（実在品を優先）
     by('xblk', (o) => o.x ? o.x.kwL * o.x.onset * (o.real ? 1.05 : 1) : 0); by('xpst', (o) => o.x ? o.x.pcyl - Math.abs(o.x.crSet - 8.0) * 8 + (o.real ? 20 : 0) : 0);
@@ -39967,24 +39968,49 @@ NT.makeMad = function (base) {
     for (const k of ['xclu', 'xtrn', 'xshf', 'xdif', 'xaxl', 'xtcs']) by(k, (o) => o.x ? o.x.nm - (o.x.gearsN && o.x.gearsN < 3 ? 400 : 0) : 0);
     by('xtyr', (o) => (o.mu || 1) + (o.tyre && /slick|semi/.test(o.tyre.cls) ? 0.05 : 0)); by('dragsus', (o) => (o.df || 1) * (o.mu || 1));
     // 過給機: 目標の出力に見合う実在のターボ（大排気量・多気筒はツイン）
-    const ps0 = base.ps || 200, L = (/(\d+(?:\.\d+)?)L/.exec(base.engine || '') || [])[1] || 2.0, tgt = clamp(ps0 * (3.5 + Math.random() * 6), 1100, Math.min(4200, 900 * L + 900));
-    const twin = L >= 4 && Math.random() < 0.8, nT = twin ? 2 : 1;
+    const ps0 = base.ps || 200, L = (/(\d+(?:\.\d+)?)L/.exec(base.engine || '') || [])[1] || 2.0, tgt = opt.tgt || clamp(ps0 * (3.5 + Math.random() * 6), 1100, Math.min(4200, 900 * L + 900));
+    const twin = opt.tgt ? L >= 4 : L >= 4 && Math.random() < 0.8, nT = twin ? 2 : 1;
     const tb = by('xtrb', (o) => (o.x && o.real ? -Math.abs(Math.log(o.x.capHp * nT / (tgt * 1.25))) + (o.x.prMax || 4) * 0.05 : -99));
     if (twin) { const tw = cats().find((q) => q.key === 'xtw'); const o = tw && tw.list.find((q) => q.id === 2); if (o) t.xtw = o.id; }
     // ナイトロ（半分ほど）
-    if (Math.random() < 0.5) { by('xnos', (o) => o.x ? -Math.abs(o.x.shot - tgt * 0.15) : -1e9, real); by('xnbt', (o) => o.x ? o.x.lb : 0); by('xnct', (o) => o.x ? o.x.ctl : 0); }
+    if (!opt.tgt && Math.random() < 0.5) { by('xnos', (o) => o.x ? -Math.abs(o.x.shot - tgt * 0.15) : -1e9, real); by('xnbt', (o) => o.x ? o.x.lb : 0); by('xnct', (o) => o.x ? o.x.ctl : 0); }
     // ブースト（EVC）: 目標の出力まで上げる（圧縮機の限界の手前まで）
     let spec = T.buildSpec(base, t);
     if (tb && tb.x) { const bmax = (X.trbBmax ? X.trbBmax(tb.x) : 3) + 0.3; t.adv = t.adv || {};
-      for (let B = 1.6; B <= bmax + 1e-6; B += 0.3) { for (let i = 0; i < 8; i++) t.adv['gb' + i] = +B.toFixed(2); spec = T.buildSpec(base, t); if (spec.ps >= tgt) break; } }
+      for (let B = 1.6; B <= bmax + (opt.tgt ? 0.5 : 0) + 1e-6; B += opt.tgt ? 0.1 : 0.3) { for (let i = 0; i < 8; i++) t.adv['gb' + i] = +B.toFixed(2); spec = T.buildSpec(base, t); if (spec.ps >= tgt) break; } }
     // 速度リミッターを外し、ギアを出力に合わせる（大出力ほどロングに）
     { const lc = cats().find((q) => q.key === 'limiter'); if (lc && lc.list.some((o) => o.id === 1)) t.limiter = 1; const gc = cats().find((q) => q.key === 'gear'); if (gc) { const want = spec.ps > 2200 ? 3 : spec.ps > 1500 ? 2 : 0; if (gc.list.some((o) => o.id === want)) t.gear = want; } spec = T.buildSpec(base, t); }
+    // 目標まで足りなければ、ナイトロで残りを足す（自動の見積もり）
+    let shot = 0;
+    if (opt.tgt && spec.ps < opt.tgt * 0.995) { by('xnos', (o) => o.x ? -Math.abs(o.x.shot - (opt.tgt - spec.ps)) - (o.x.shot < opt.tgt - spec.ps ? 1000 : 0) : -1e9, real); by('xnbt', (o) => o.x ? o.x.lb : 0); by('xnct', (o) => o.x ? o.x.ctl : 0); spec = T.buildSpec(base, t); }
+    if (spec && spec.xr && spec.xr.nos) shot = spec.xr.nos.shot || 0;
     if (!spec || !(spec.ps > 0) || !isFinite(spec.ps)) return null;
-    return { spec, tune: t, style: '魔改造', key: 'mad' };
+    return { spec, tune: t, style: '魔改造', key: 'mad', shot };
   } catch (e) { if (g.console) console.warn('makeMad', e); return null; }
 };
 { const mk0 = NT.make; NT.make = function (base, key) { if (key === 'mad') return NT.makeMad(base); return mk0.apply(this, arguments); }; }
 { const ps0 = NT.pickStyle; NT.pickStyle = function (use) { const p = R.cfg.mad === undefined ? 0.3 : R.cfg.mad; if (use === 'drag' && Math.random() < p) return 'mad'; return ps0.apply(this, arguments); }; }
+
+/* ---------- 自動の見積もり: 通常の見積もりで目標に届かない大出力は、実在品の最大構成（ストローカー・メタノール・大型ターボ・
+   EVC のブースト・ナイトロ）を組んで比べ、目標に近い方を採る ---------- */
+{ const UI = HW.X && HW.X.ui;
+  if (UI && UI.planRun) { const pr0 = UI.planRun; UI.planRun = async function (cx, o, prog) {
+    const r = await pr0.apply(this, arguments);
+    try {
+      const T = cx.T, b = cx.b, got = r && r.ok ? r.got : 0; if (!(o.target > 1200) || got >= o.target * 0.97) return r;
+      if (prog) prog('大出力の構成（ストローカー・メタノール・大型ターボ・ブースト・ナイトロ）を試しています…', 0);
+      const t0 = Object.assign(JSON.parse(JSON.stringify(cx.game.tunes[b.id] || T.blankTune())));
+      let best = null; for (const meth of [true, false]) { const m = NT.makeMad(b, { tgt: o.target, meth, t0 }); if (m && (!best || m.spec.ps + m.shot > best.spec.ps + best.shot)) best = m; }
+      if (!best || best.spec.ps + best.shot <= got) return r;
+      const c0 = T.buildSpec(b, t0), cats = T.catsOf(b, best.tune), steps = [];
+      for (const cat of cats) { const a = t0[cat.key], z = best.tune[cat.key]; if (a === z || (a === undefined && (z === 0 || z === 'none'))) continue; const to = cat.list.find((q) => q.id === z), fr = cat.list.find((q) => q.id === a); if (!to) continue;
+        steps.push({ key: cat.key, cat: cat.label.replace(/（.*$/, ''), from: fr && !(fr.id === 0 || fr.id === 'none') ? fr.name : '純正', to: to.id === 0 || to.id === 'none' ? '純正' : to.name, cost: (to.cost || 0) - ((fr && fr.cost) || 0), why: '大出力の構成（自動）' }); }
+      const B = best.spec.xr ? best.spec.xr.Bop : 0, rows = best.spec.x ? best.spec.x.rows.filter((q) => q.u > 1).map((q) => q.n + ' ' + Math.round(q.u * 100) + '%') : [];
+      const notes = ['通常の見積もり（' + Math.round(got) + ' PS）では届かないため、実在品の最大構成で組みました: エンジン ' + Math.round(best.spec.ps) + ' PS' + (best.shot ? '＋ナイトロ ' + best.shot + ' hp（約 ' + Math.round(best.shot * 1.014) + ' PS）' : '') + '・EVC のブースト ' + B.toFixed(2) + ' bar（詳細設定に書き込み済み）。',
+        rows.length ? '定格を超えている部品があります（' + rows.join('・') + '）。使い続けると壊れます。ブーストを下げるか、ナイトロを短く使ってください。' : '主な部品は定格の範囲内です。'];
+      return { ok: true, tune: best.tune, c: best.spec, c0, steps, notes, route: 'turbo', got: Math.round(best.spec.ps + best.shot * 1.014), target: o.target, reach: 0, cost: (best.spec.tuneCost || 0) - (c0.tuneCost || 0), nb: (r && r.nb) || 0, um: o.um };
+    } catch (e) { if (g.console) console.warn('max build', e); return r; }
+  }; } }
 
 /* ---------- 2) ツリー（フル／プロ） ---------- */
 R.treeN = function (st) {      // いま点いている黄色の数（0〜3）。プロツリーは 3 つ同時
