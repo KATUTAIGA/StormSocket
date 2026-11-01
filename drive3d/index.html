@@ -30,7 +30,7 @@ body { background: var(--night); color: var(--ink); font-family: var(--f-body); 
 
 .hud { position: absolute; left: 0; right: 0; top: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 16px; pointer-events: none; }
 .panel { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 10px; padding: 10px 14px; backdrop-filter: blur(6px); }
-.hud.cp .speed .row, .hud.cp .tach, .hud.cp .boostw { display: none; }
+.hud.cp .tach, .hud.cp .boostw { display: none; } .hud.cp .speed .row { transform: scale(0.7); transform-origin: left top; }
 .hud .right .trip, .hud #mini { transition: opacity 0.7s; }
 .hud.cp.tun .right .trip, .hud.cp.tun #mini { opacity: 0.28; }      /* 車内視点でトンネルに入ったら、右側の走行情報・ミニマップを薄くして前方の視界を確保する */
 .speed { min-width: 0; display: grid; gap: 7px; }
@@ -14640,7 +14640,7 @@ function buildSpec1(base0, tune) {
     // リミッター解除時の最高速ギヤ（330km/h頭打ちの解消）:
     // 車両の最高段が 420km/h 未満で吹け切る場合、1〜6速などの加速比はそのまま活かしつつ、
     // 440km/h+ の超高速域まで伸びる高速オーバードライブ段（7速、またはトップギヤ拡張）を解放
-    if (c.limiterRemoved && !gset && c.type !== 'ev' && c.gears && c.gears.length) {
+    if (false && c.limiterRemoved && !gset && c.type !== 'ev' && c.gears && c.gears.length) {      // v28: 実在しないギアは足さない
       const topR = c.gears[c.gears.length - 1] * c.final;
       const topKmh = (c.redline / topR) * 2 * Math.PI * c.wheelR * 3.6 / 60;
       if (topKmh < 420) {
