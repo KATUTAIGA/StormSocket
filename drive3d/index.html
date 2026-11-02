@@ -295,6 +295,14 @@ body { background: var(--night); color: var(--ink); font-family: var(--f-body); 
 .gs i.up { color: #6fd68a; } .gs i.dn { color: #ff8a7a; }
 .gswarn { padding: 6px 10px; border-radius: 8px; background: rgba(8,12,22,0.88); border: 1px solid var(--panel-line); font-size: 12px; line-height: 1.5; color: var(--lamp); }
 .gswarn.bad { color: #ff8a7a; border-color: #ff8a7a; }
+.gschar { padding: 6px 10px; border-radius: 8px; background: rgba(8,12,22,0.88); border: 1px solid var(--panel-line); font-size: 12px; line-height: 1.5; }
+.gschar > b { color: var(--ink); display: block; margin-bottom: 2px; }
+.gscg { display: flex; flex-wrap: wrap; gap: 3px 6px; align-items: baseline; margin: 2px 0; }
+.gscg u { text-decoration: none; color: var(--ink-dim); min-width: 5.5em; font-size: 11px; }
+.gsc { background: rgba(255,255,255,0.06); border-radius: 5px; padding: 0 6px; color: var(--ink); }
+.gsc i { font-style: normal; color: var(--ink-dim); margin-right: 4px; }
+.gsc.up { color: var(--ok); }
+.gsc.dn { color: #ff9a7a; }
 #garage .gwrap { grid-column: 2; grid-row: 2; width: auto; max-height: none; padding: 0; display: flex; flex-direction: column; overflow: hidden; gap: 0; min-height: 0; }
 .gpane { display: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 14px; gap: 12px; align-content: start; }
 .gpane.on { display: grid; }
@@ -14290,7 +14298,7 @@ function applyPhys(c, V, D, base, base0, info, mods) {
   const rideLoss = (b, zz, f, hy) => b / 20 * (0.06 + 0.35 * Math.abs(zz - 0.35) + 0.12 * Math.max(0, f - 1.7) + 0.1 * Math.max(0, 1.1 - f) + hy * 0.05);
   const rl = rideLoss(V.bump, z, fAvg, d.truck ? (V.leafH || 0) / 100 : 0), rl0 = rideLoss(D.bump, (D.zB + D.zR) / 200 + (d.truck ? (D.leafH || 0) / 100 * 0.15 : 0), (fRide(D.kF, wf0, Md) + fRide(D.kR, 1 - wf0, Md)) / 2, d.truck ? (D.leafH || 0) / 100 : 0);
   const rideK = clampV(1 - rl, 0.55, 1) / clampV(1 - rl0, 0.55, 1);
-  c.grip *= rideK; c.mu *= Math.pow(rideK, 0.7); ph.bump = V.bump / 1000; ph.zeta = z; ph.fRide = fAvg; ph.cab = d.truck ? [1, 0.6, 0.35][V.cabS | 0] : 0.3;
+  c.grip *= rideK; c.mu *= Math.pow(rideK, 0.7); ph.fRide0 = (fRide(D.kF, wf0, Md) + fRide(D.kR, 1 - wf0, Md)) / 2; ph.zeta0 = (D.zB + D.zR) / 200; ph.bump = V.bump / 1000; ph.zeta = z; ph.fRide = fAvg; ph.cab = d.truck ? [1, 0.6, 0.35][V.cabS | 0] : 0.3;
   // 慣性: 前後に重いものが離れているほど向きが変わりにくい（オーバーハングも効く）
   const L1 = wb + V.ohF / 1000 + (base0.L - base0.wb - d.ohF / 1000), Iz = c.mass * (L1 * L1 + base0.W * base0.W) / 12 * V.iK / 100, Iz0 = d.m * (base0.L * base0.L + base0.W * base0.W) / 12;
   c.adv.stab *= clampV(Math.sqrt(Iz / Iz0) * Math.pow(d.hz / Math.max(0.5, fAvg), 0.3) / Math.sqrt(frame), 0.6, 1.8);
@@ -14396,6 +14404,7 @@ function applyPhys(c, V, D, base, base0, info, mods) {
     R(TK, '後軸の荷重', Math.round(c.mass * (1 - wf)).toLocaleString() + ' kg');
     R(TK, '排気ブレーキの減速（1 速・純正比のトルク）', Math.round(V.exb) + ' N·m');
   }
+  if (HW.RL && HW.RL.chsPhys) HW.RL.chsPhys(c, V, D, ph, info, d);      // v30: 乗り心地・ロール・タイヤの熱・フルードの沸点・空力の前後配分などの派生値
   if (pay > 0 && !d.truck) R(SU, '積載', pay + ' kg');
 }
 /* スライダーの定義: [キー, 見出し, 最小, 最大, 刻み, 単位, 区分, 表示条件] 。def は車ごとの純正値 */
@@ -14443,7 +14452,8 @@ function advSchema(base, base0, c0) {
 /* 数値を反映した諸元を c に書き込む。戻り値は表示用の計算結果 */
 function applyAdv(c, base, base0, tune, sel, cats, mods) {
   const sc = advSchema(base, base0, c), g = sc.geo, adv = tune.adv || {}, V = {};
-  for (const s of sc.list) V[s.key] = adv[s.key] !== undefined ? clampV(+adv[s.key], s.min, s.max) : s.def;
+  if (HW.RL && HW.RL.chsShift) HW.RL.chsShift(sc, c, base, base0, tune, sel, cats, mods);      // v30: 足まわりの部品 → ばね・減衰・スタビ・アライメント・LSD・ブレーキ・重量配分の既定値
+  for (const s of sc.list) V[s.key] = adv[s.key] !== undefined ? clampV(+adv[s.key], s.min, s.max) : (s.defP !== undefined ? s.defP : s.def);
   if (c.xdwf && V.wf !== undefined && adv.wf === undefined) V.wf = clampV(V.wf + c.xdwf * 100, 35, 70);      // v24: 軽量化部品などの搭載位置による前後配分の変化
   const info = {}; c.adv = { V, info, geo: g };
   const red0 = c.redline;
@@ -14586,7 +14596,7 @@ function buildSpec1(base0, tune) {
   const snd = { intake: 0, exh: 0, ecu: 0, tire: 0, bov: 0, wg: 0, als: 0, mfL: 0, mfA: 0, mfB: 0, mfD: 0, mfP: 0, mfR: 0, mfM: 0 };
   sel.forEach((o, i) => {
     cost += o.cost || 0; if (o.cost) count++;
-    for (const k in M) if (o[k]) M[k] *= o[k];
+    for (const k in M) if (o[k]) M[k] *= o[k] / (HW.RL && HW.RL.chsRes ? HW.RL.chsRes(o, cats[i].key, k) : 1);      // v30: 二重に数えない
     for (const k in A) if (o[k]) A[k] += o[k];
     if (o.lim) lim = o.lim; if (o.gset) gset = o.gset; if (o.jet) jet = o.jet;
     if (o.snd) for (const k in o.snd) snd[k] = Math.max(snd[k], o.snd[k]);
@@ -15287,7 +15297,7 @@ X.thrMap = (xe, p) => (xe && xe.tier >= 2 && xe.thr ? lin1(xe.thr, X.THR_X, p) :
 /* ---------------- 吸気温（インタークーラーの出口）---------------- */
 X.iatModel = function (xr, e) {
   const amb = e.amb, v = e.v || 0;
-  if (!xr.turbo) return amb + 6 + 22 * (1 - ss(2, 20, v)) * (0.3 + 0.7 * (e.t === undefined ? 1 : e.t));
+  if (!xr.turbo) return amb + 6 + 22 * (xr.rlSoak || 1) * (1 - ss(2, 20, v)) * (0.3 + 0.7 * (e.t === undefined ? 1 : e.t)) + (xr.rlIat ? HW.RL.ENG.iatOff(xr, v) : 0);
   const pa = e.pa || G0, pr = Math.max(1, (pa + (e.B || 0)) / pa), tk = xr.turboX, eta = (tk && tk.eta) || (xr.sc ? 0.62 : 0.70), Tk = amb + 273.15;
   const Tc = Tk * (1 + (Math.pow(pr, 0.2857) - 1) / eta) - 273.15;
   const ic = xr.ic || { eta: 0.55, dp: 12, ice: 0, water: 0, cap: xr.capKw };
@@ -15296,8 +15306,8 @@ X.iatModel = function (xr, e) {
   else if (ic.ice) { const iceOn = (e.ice === undefined ? 1 : e.ice) > 0.02; etaI = iceOn ? ic.eta : ic.eta * 0.75; sink = iceOn ? 8 : (e.icw === undefined ? amb + 8 : e.icw); }
   else { etaI = ic.eta * (0.55 + 0.45 * ss(0, 26, v)); sink = amb; }
   etaI *= 1 - 0.35 * Math.max(0, (e.P || 0) / Math.max(1, ic.cap) - 0.85);
-  const soak = 12 * (1 - ss(2, 20, v)) * (0.3 + 0.7 * (e.t === undefined ? 1 : e.t));
-  return Tc - etaI * (Tc - sink) + soak;
+  const soak = 12 * (xr.rlSoak || 1) * (1 - ss(2, 20, v)) * (0.3 + 0.7 * (e.t === undefined ? 1 : e.t));
+  return Tc - etaI * (Tc - sink) + soak + (xr.rlIat ? HW.RL.ENG.iatOff(xr, v) : 0);
 };
 
 /* ---------------- 故障の段階表 ----------------
@@ -15528,7 +15538,7 @@ X.op = function (pt, e) {
   const afrE = afrT * (1 + lean);
   const nosF = nosOn ? clampV(Pn / Math.max(Pcore + Pn, 30), 0, 0.6) : 0;
   const kRaw0 = (adv.knockB === undefined ? 0.5 : adv.knockB) + Math.max(0, B - bar0) * 0.75;
-  const kRaw = (kRaw0 + 0.45 * (afrE - (V.afr || afrW)) + 0.11 * dIg + (live ? 0.018 * (o.iat - o.iatRef) + 0.02 * Math.max(0, (e.wT === undefined ? 90 : e.wT) - 100) + 0.45 * t * (1 / ((xr.cool && xr.cool.blk) || 1) - 1) : 0) + 1.6 * nosF + 1.2 * Math.max(0, B - crTol)) * (0.35 + 0.65 * kt);
+  const kRaw = (kRaw0 + (xr.rlK === undefined && !xr.rlWmi ? 0 : HW.RL.ENG.kOff(xr, xs, live)) + 0.45 * (afrE - (V.afr || afrW)) + 0.11 * dIg + (live ? 0.018 * (o.iat - o.iatRef) + 0.02 * Math.max(0, (e.wT === undefined ? 90 : e.wT) - 100) + 0.45 * t * (1 / ((xr.cool && xr.cool.blk) || 1) - 1) : 0) + 1.6 * nosF + 1.2 * Math.max(0, B - crTol)) * (0.35 + 0.65 * kt);
   // ノック制御（ECU がノックセンサーで検知して点火を引く）
   const kl = xr.sens.knock === undefined ? 1 : xr.sens.knock, ctl = [0, 0.5, 0.78, 0.93][kl] * (tier >= 2 ? 1 : 0.8);
   const ret = clampV((kRaw - 0.95) / 0.11, 0, 14) * ctl, kEff = kRaw - ret * 0.11;
@@ -15541,6 +15551,7 @@ X.op = function (pt, e) {
   if (xe && xe.tier >= 5 && xr.sens.egt >= 1 && xs.th.egt !== null && xs.th.egt > xr.rt.egt * 0.97) { P *= 0.88; prot = 'EGT 保護で出力を絞っています'; }
   if (xe && xe.tier >= 4 && xr.sens.oilp >= 2 && live && pt.xoil !== undefined && pt.xoil < 0.2) { P *= 0.6; prot = '油圧保護で出力を絞っています（オイルが少なくなっています）'; }
   if (xs.prot2) prot = xs.prot2;
+  if (xr.rlD) { const rd = HW.RL.ENG.derate(xr, xs, e, o, live); if (rd.k < 1) { P *= rd.k; if (rd.msg && !prot) prot = rd.msg; } }      /* v30: 水温・油温が高いと ECU が出力を絞る */
   // トルクリミット・回転/速度リミッター
   let Te = P * 9549 / Math.max(rpm, 500);
   if (xe && xe.tier >= 2 && xe.tq) { const lim = xe.tq / 100 * Math.max.apply(null, c.torque.map((p) => p[1])) * (bc ? 1.0 : 1); if (Te > lim) { Te = lim; P = Te * rpm / 9549; prot = 'トルクリミットが働いています'; } }
@@ -15589,7 +15600,7 @@ X.integrate = function (pt, e) {
   xs.t += dt;
   const env = e.env || {}, amb = live && env.amb !== undefined ? env.amb : 20, v = e.v || 0, red = c.redline || 7000, rpm = o.rpm, t = o.t;
   // 熱の状態（吸気温・排気温・氷・水冷の水）
-  const iatT = X.iatModel(xr, { amb, pa: env.pa || G0, B: o.B, v, t, P: o.P, ice: xs.ice, icw: th.icw === null ? amb + 8 : th.icw });
+  const iatT = X.iatModel(xr, { amb, pa: env.pa || G0, B: o.B, v, t, P: o.P, ice: xs.ice, icw: th.icw === null ? amb + 8 : th.icw }) - (xr.rlWmi ? HW.RL.ENG.wmiStep(xr, xs, o, dt, live) : 0);
   if (th.iat === null || !Number.isFinite(th.iat)) th.iat = Number.isFinite(o.iatRef) ? o.iatRef : amb + 6;
   if (th.egt === null || !Number.isFinite(th.egt)) th.egt = 380;
   if (th.icw === null || !Number.isFinite(th.icw)) th.icw = amb + 8;
@@ -15653,9 +15664,9 @@ X.integrate = function (pt, e) {
   // 油の側
   const oilL = e.oilLevel === undefined ? 1 : e.oilLevel, oilT = e.oilT === undefined ? 95 : e.oilT, aLat = Math.abs(e.aLat || 0) / 9.8;
   if (live) {
-    const starve = (xr.drySump ? 0 : ss(0.8, 1.4, aLat) * (xr.starve === undefined ? 1 : xr.starve)) * ss(0.7, 0.3, oilL);
+    const starve = (xr.drySump ? 0 : ss(0.8, 1.4, aLat) * (xr.starve === undefined ? 1 : xr.starve)) * ss(0.7, 0.3, oilL - (xr.drySump ? 0 : 0.42 * ss(0.8, 1.5, aLat) * (xr.starve === undefined ? 1 : xr.starve)));      /* v30: 横 G でオイルがパンの片側に寄り、油面が実質下がる（バッフルで軽減・ドライサンプで無し）*/
     if (starve > 0.05) add('oil', starve * starve / 60);
-    if (oilT > 130) { add('brg', Math.pow((oilT - 130) / 30, 2) / 150); }
+    if (oilT > 130 + (xr.rlOilDT || 0)) { add('brg', Math.pow((oilT - 130 - (xr.rlOilDT || 0)) / 30, 2) / 150); }
     if (oilL < 0.25) { add('brg', Math.pow((0.25 - oilL) / 0.25, 2) / 40); add('crk', Math.pow((0.25 - oilL) / 0.25, 2) / 120); }
     if (xr.fuel && xr.fuel.corr > 0.4 && !xr.corrOk) { add('inj', 0.5 * xr.fuel.corr / 400); add('pmp', 0.3 * xr.fuel.corr / 400); }
   }
@@ -27043,7 +27054,7 @@ class Game {
   retune() {
     const b = this.base;
     this.tunes[b.id] = this.tunes[b.id] || HW.TUNE.blankTune();
-    this.tuned = HW.TUNE.buildSpec(b, this.tunes[b.id]);
+    this.tuned = HW.TUNE.buildSpec(b, this.tunes[b.id]); if (HW.RL) HW.RL.prep(this.tuned);      // v30: 部品の性格（c.rl）を組み立て直したときに計算しておく
     this.pt = new HW.Powertrain(this.tuned); this.pt.manual = !!this.mt;
     if (HW.applyLooks && this.pc) HW.applyLooks(this.pc, this.tuned);
     if (HW.applyCargo && this.pc) { try { HW.applyCargo(this.pc, this.tuned, b); } catch (e) { if (typeof console !== 'undefined') console.warn('cargo visual failed', e); } }
@@ -27570,6 +27581,7 @@ class Game {
   }
   /* 排気の煙: ディーゼルは踏み込むと黒煙。マニ割のダブル煙突は、単独側が「その気筒が燃えるたび」にポッ・ポッと、集合側はそれと半周期ずれて続けて出す */
   smokeStep(dt) {
+    if (HW.RL && HW.RL.fxStep) HW.RL.fxStep(this, dt);      // v30: 排気の炎・ブレーキの赤熱
     if (!this.smoke) this.smoke = new Smoke(this.scene);
     const sm = this.smoke, P = this.P, c = this.spec, pc = this.pc; sm.update(dt);
     if (this.mode !== 'drive' || !pc || P.rev && !P.vr) return;
@@ -27625,7 +27637,7 @@ class Game {
       this.camPos.set(cp.x, cp.y, cp.z); this.camH = pc.h;
       if (this.shake > 0.01) cam.position.add(new T.Vector3((Math.random() - 0.5) * this.shake * 0.12, (Math.random() - 0.5) * this.shake * 0.1, (Math.random() - 0.5) * this.shake * 0.12));
       { const R = this.ride; if (R) {      // 車体に対する頭の動き（シートのたわみ・首）と、細かい振動（路面のざらつき・継ぎ目・エンジン）
-        cam.position.y += R.hy + R.vib; cam.rotation.x += R.hp; cam.rotation.z += R.hr; } }
+        if (HW.RL && HW.RL.chsHead) HW.RL.chsHead(this, cam, R); else { cam.position.y += R.hy + R.vib; cam.rotation.x += R.hp; cam.rotation.z += R.hr; } } }
       if (cam.near !== 0.12) { cam.near = 0.12; }
       const wf = (this.camera.aspect < 1 ? 82 : 64) + clamp(P.v / 60, 0, 1) * 4 + (this.fovAdj || 0) - 6 * (this.world ? this.world.tunnelK || 0 : 0);      // トンネルの中は少し画角を狭めて、壁の引き伸ばしを抑える
       cam.fov += (wf - cam.fov) * Math.min(1, dt * 3); cam.updateProjectionMatrix();
@@ -28611,7 +28623,7 @@ G.rideStep = function (dt) {
   const v = P.rev ? -(P.vr || 0) : P.v, free = !!this.path.free, tun = W ? W.tunnelK || 0 : 0, off = (P.offT || 0) > 0.3;
   const wb = c.wb || 2.7, tr = (c.W || 1.75) * 0.85, truck = !!ph.truck || /^truck/.test(c.body || '');
   // 路面の荒さ: 高速道路は滑らか、下道はやや荒く、道路の外（未舗装）は大きく。トンネルのコンクリート舗装は少し滑らか
-  const base = clamp((ph.bump || 0.008) / 0.008, 0.3, 4) * 0.028, rough = base * (off ? 2.6 : free ? 1 : 0.7) * (1 - 0.3 * tun) * (truck ? 1.35 : 1);      // トラックは高圧のタイヤと硬いばねで、路面の細かい凹凸をよく拾う
+  const base = clamp((ph.bump || 0.008) / 0.008, 0.3, 4) * 0.028 * (c.chs && c.chs.roadK || 1), rough = base * (off ? 2.6 : free ? 1 : 0.7) * (1 - 0.3 * tun) * (truck ? 1.35 : 1);      // トラックは高圧のタイヤと硬いばねで、路面の細かい凹凸をよく拾う
   // 固有振動数と減衰比（設定から。空荷のトラックは跳ねやすい）
   // トラック: 板ばねは空荷だと硬くて跳ね（振動数が高く、収まりが遅い）、積むとゆったり沈む。重心が高いので左右にはゆっくり大きく揺れ、揺り返しが残る。
   // キャブ（運転台）はフレームの上に別のばねで載っていて、段差や加減速・変速のたびに前後にうなずく。運転席はエアサスのシートでさらにゆっくり上下する
@@ -28632,7 +28644,7 @@ G.rideStep = function (dt) {
     const uh = (zFL + zFR + zRL + zRR) / 4, up = ((zFL + zFR) - (zRL + zRR)) / (2 * wb), ur = ((zFL + zRL) - (zFR + zRR)) / (2 * tr);
     const duh = (uh - R.uh) / h, dup = (up - R.up) / h, dur = (ur - R.ur) / h; R.uh = uh; R.up = up; R.ur = ur;
     // 加減速・横 G でばねが縮む（静的な傾き）: 減速で前が沈む、加速で後ろが沈む、曲がると外側へ傾く
-    const pT = up + clamp(aLs * 0.004 * pK, -0.045 * pK, 0.035 * pK), rT = ur + clamp((P.aLat || 0) * 0.0065 * rK, truck ? -0.1 : -0.075, truck ? 0.1 : 0.075);
+    const pT = up + clamp(aLs * 0.004 * pK * (c.chs && c.chs.pitchV || 1), -0.045 * pK, 0.035 * pK), rT = ur + clamp((P.aLat || 0) * 0.0065 * rK * (c.chs && c.chs.rollV || 1), truck ? -0.1 : -0.075, truck ? 0.1 : 0.075);
     R.zv += (wH * wH * (uh - R.z) + 2 * zt * wH * (duh - R.zv)) * h; R.z += R.zv * h;
     R.pv += (wP * wP * (pT - R.p) + 2 * zt * wP * (dup - R.pv)) * h; R.p += R.pv * h;
     R.rv += (wR * wR * (rT - R.r) + 2 * ztR * wR * (dur - R.rv)) * h; R.r += R.rv * h;
@@ -28666,7 +28678,7 @@ G.rideStep = function (dt) {
     R.ePh += dt * rpm / 60 * cyl / 2 * 2 * Math.PI;
     ev = (0.00012 + 0.0005 * idleK * (dsl ? (truck ? 1.2 : 1.7) : 1) * (cyl <= 3 ? 1.6 : cyl >= 6 ? 0.5 : 1)) * Math.sin(R.ePh);      // トラックのキャブはマウントで浮いているので、乗用車のディーゼルほどは伝わらない
   }
-  R.vib = clamp(hf * (truck ? 1.6 : 1), -0.012, 0.012) + ev + (truck ? R.bm * 0.6 : 0);
+  R.vib = clamp(hf * (truck ? 1.6 : 1) * (c.chs && c.chs.vibK || 1), -0.012, 0.012) + ev + (truck ? R.bm * 0.6 : 0);
   return R;
 };
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -29168,9 +29180,11 @@ function turboSound(c) {
   if (sn.bov === 1) { t.bov = Math.max(t.bov, 0.6) * 1.35; t.flut *= 0.3; t.recirc = false; t.fc *= 1.1; }   // 大気開放ブローオフ
   if (sn.bov === 2) { t.flut = Math.max(t.flut, 0.75) * 1.2; t.bov *= 0.25; t.recirc = false; }               // ブローオフ無し
   if (diesel) { t.bov = 0; t.flut = 0; t.tone = Math.max(t.tone, 0.8); t.hiss *= 0.6; }                      // ディーゼルはスロットルが無い
-  return t;
+  return HW.RLS && HW.RLS.tb ? HW.RLS.tb(c, t) : t;      // v30: 部品（外部ウエストゲート・ブローオフ・インタークーラー）の違い
 }
 
+/* v30: 部品由来の追加パラメータ（c.rl.snd.sx）の初期値。純正 = 何も足さない */
+const NOSX = { nvh: 0, mount: 0, mech: 0, rasp: 0, itb: 0, xg: 0, pw: 0, cov: 0, tick: 0, slap: 0, injT: 0, pump: 0, rattle: 0, diff: 0, hum: 0, gearW: 0, exv: 0, exvK: 1, limHz: 13, limD: 0.1, limPop: 0, popL: -1, nosK: 0, nosP: 0 };
 class EngineSynth {
   constructor(sr) {
     this.sr = sr; this.theta = 0; this.clock = 0;
@@ -29187,6 +29201,8 @@ class EngineSynth {
     this.bov = null; this.pops = []; this.popIdx = 0; this.popEnv = 0; this.popPh = 0; this.popClock = 0;
     this.armed = false; this.limT = 0; this.boostS = 0; this.shaft = 0; this.jetS = 0; this.jPh = 0; this.jPh2 = 0; this.insideS = 0; this.clunk = 0; this.ovr = 0; this.prevLoad = 0;
     this.J = new Float64Array(0); this.PH = new Float64Array(0); this.FAC = new Float64Array(0); this.K = new Float64Array(0);
+    this.exK = 1; this.ik = 1; this.pwk = 1;      // v30: 排気バルブの開き・吸気管の長さ・出力ぶんの音量
+    this.rls = { tk: 0, sp: 0, ij: 0, rt: 0, rtn: 0, nsClk: 0, pmPh: 0, pmPh2: 0, dfPh: 0, dfPh2: 0, hmPh: 0, hmPh2: 0, exvS: 0, nsPh: 0, nsBz: 0, sl: 0, sm: 0, ns1: 0, ns2: 0, limPh: 0 };      // v30: 部品由来の音の状態
   }
   /* 次数成分の表を作る（車内のこもり音の骨格） */
   plan(prof) {
@@ -29212,15 +29228,15 @@ class EngineSynth {
   }
   amps(rpm, load, out) {
     const p = this.p, prof = p.prof, s = p.snd || {};
-    const ecu = s.ecu || 0, exh = (s.exh || 0) + (s.mfL || 0), ink = s.intake || 0;      // mfL: マフラーごとの音量の上乗せ（爆音）
-    const form = prof.form.concat(exh ? [[s.mfA || 150, 0.5 * exh, 0.6], [s.mfB || 420, 0.4 * exh, 0.7]] : [], s.mfD ? [[55 + 40 / Math.max(0.5, s.mfM || 1), 1.2 * s.mfD, 0.45]] : [], ink ? [[240, 0.35 * ink, 0.6], [640, 0.3 * ink, 0.7]] : []);      // マフラーの強める帯域・こもり音
+    const ecu = s.ecu || 0, exh = ((s.exh || 0) + (s.mfL || 0)) * this.exK, ink = s.intake || 0;      // mfL: マフラーごとの音量の上乗せ（爆音）。exK: 排気バルブが閉じているあいだ小さくなる（v30）
+    const form = prof.form.concat(exh ? [[s.mfA || 150, 0.5 * exh, 0.6], [s.mfB || 420, 0.4 * exh, 0.7]] : [], s.mfD ? [[55 + 40 / Math.max(0.5, s.mfM || 1), 1.2 * s.mfD, 0.45]] : [], ink ? [[240 * this.ik, 0.35 * ink, 0.6], [640 * this.ik, 0.3 * ink, 0.7]] : []);      // マフラーの強める帯域・こもり音
     const vt = prof.vtec ? ss(prof.vtec - 150, prof.vtec + 300, rpm) : 0;
     const slope = prof.slope - 0.55 * load - 0.14 * ecu - 0.16 * exh - 0.22 * vt;
-    const volume = prof.vol * (0.42 + 0.58 * Math.pow(load, 0.8)) * (0.55 + 0.45 * Math.min(1, rpm / 4000)) * (1 + 0.3 * exh + 0.1 * ecu) * (1 + 0.4 * vt) * (1 - p.ev) * 0.05;
+    const volume = prof.vol * (0.42 + 0.58 * Math.pow(load, 0.8)) * (0.55 + 0.45 * Math.min(1, rpm / 4000)) * (1 + 0.3 * exh + 0.1 * ecu) * (1 + 0.4 * vt) * (1 - p.ev) * this.pwk * 0.05;
     const f1 = rpm / 120;
     if (prof.ordT) {
       const mix = clamp(Math.max(Math.pow(load, 0.7), clamp((rpm - prof.idleRpm * 1.3) / 500, 0, 1) * 0.65), 0, 1), E = prof.envT;
-      const LK = prof.levK || [0.5, 0.6, 1500], lev = prof.vol * (prof.clat ? prof.clat.og : 1) * (LK[0] + (1 - LK[0]) * Math.pow(load, 0.8)) * (LK[1] + (1 - LK[1]) * Math.min(1, rpm / LK[2])) * (1 + 0.3 * exh) * (1 - p.ev) * 0.04;
+      const LK = prof.levK || [0.5, 0.6, 1500], lev = prof.vol * (prof.clat ? prof.clat.og : 1) * (LK[0] + (1 - LK[0]) * Math.pow(load, 0.8)) * (LK[1] + (1 - LK[1]) * Math.min(1, rpm / LK[2])) * (1 + 0.3 * exh) * (1 - p.ev) * this.pwk * 0.04;
       for (let n = 0; n < this.J.length; n++) {
         const f = this.J[n] * f1; if (f < 17 || f > 2500) { out[n] = 0; continue; }
         let k = 1; while (k < E.length - 1 && E[k][0] < f) k++;
@@ -29240,7 +29256,7 @@ class EngineSynth {
   /* 内部状態に NaN / 無限大が入ったら 0 に戻す（フィルターや遅延線が NaN のままだと音が出なくなる） */
   heal() {
     const fix = (o) => { for (const k in o) { const v = o[k]; if (typeof v === 'number') { if (!isFinite(v)) o[k] = 0; } else if (v && (v instanceof Float32Array || v instanceof Float64Array || Array.isArray(v))) { for (let i = 0; i < v.length; i++) if (typeof v[i] === 'number' && !isFinite(v[i])) v[i] = 0; } } };
-    fix(this); if (this.s) fix(this.s); this.chirps = []; this.bov = null; this.pops = []; this.popEnv = 0; this.psh = undefined;
+    fix(this); if (this.s) fix(this.s); if (this.rls) fix(this.rls); this.chirps = []; this.bov = null; this.pops = []; this.popEnv = 0; this.psh = undefined;
   }
   /* n サンプル分を out に書き出す */
   render(out, n, outS, outC) {      // outS / outC: マニ割の単独側・集合側（別の Web Audio ノードでフィルターをかける）
@@ -29251,9 +29267,15 @@ class EngineSynth {
     const r0 = this.rpm, r1 = Math.max(prof.minR || 300, p.rpm), load = clamp(p.load, 0, 1);
     const D = this.dc || (this.dc = { th: 0, tph: 0, tf: 62, ck: 0, ckT: 0, ckN: 0, w1: 0, w2: 0, jp: 0, n1: 0, n2: 0, rt: 0 });
     if (this.dctEv) { const ev = this.dctEv; this.dctEv = null; D.th = 0.35 + 0.65 * clamp(ev.ld, 0, 1); D.tf = ev.dir > 0 ? 56 + Math.random() * 6 : 70 + Math.random() * 8; D.tph = 0; D.ck = 0.9; D.ckT = 0.03 + Math.random() * 0.012; D.ckN = 2; D.rt = ev.dir < 0 ? 0.5 : 0; }
+    // v30: 部品由来のパラメータ（純正は NOSX = 何も変わらない）。排気バルブは開閉に 0.3 秒ほどかかる
+    const sx = p.sx || NOSX, RS = this.rls;
+    this.ik = 0.32 / (prof.inLen || 0.32);
+    if (sx.exv) { const tg = (load > 0.5 || r1 > 4200) ? 1 : 0; RS.exvS += (tg - RS.exvS) * (1 - Math.exp(-(n / sr) / 0.3)); this.exK = sx.exvK + (1 - sx.exvK) * RS.exvS; } else this.exK = 1;
+    this.pwk = (1 + sx.xg) * (1 + sx.pw * Math.pow(load, 1.3));
+    const itbK = 1 + 1.8 * sx.itb, limHz = sx.limHz, limD = sx.limD, limPop = sx.limPop;
     this.amps(r1, load, a1);
     const a0 = this.amp0;
-    const s = p.snd || {}, tb = p.tb, exh = (s.exh || 0) + (s.mfL || 0), ecu = s.ecu || 0, ink = s.intake || 0, cyl = prof.cyl, mfP = s.mfP || 0, mfR = s.mfR || 0;
+    const s = p.snd || {}, tb = p.tb, exh = ((s.exh || 0) + (s.mfL || 0)) * this.exK, ecu = s.ecu || 0, ink = s.intake || 0, cyl = prof.cyl, mfP = s.mfP || 0, mfR = s.mfR || 0;
     const bt = n / sr, KT = (tau) => 1 - Math.exp(-bt / tau);      // v26e: 時間で近づける（1 ブロックの長さ bt 秒）
     const inside = this.insideS += (p.inside - this.insideS) * KT(0.15);
     const over = (p.fcut !== undefined ? !!p.fcut : load < 0.06 && r1 > 1500) && !prof.hv;                           // 燃料カット（エンジンブレーキ）
@@ -29264,24 +29286,25 @@ class EngineSynth {
     if (load > 0.55) this.armed = true;
     if (this.armed && load < 0.18) {
       this.armed = false;
-      if (r1 > 2400 && (exh >= 1 || ecu >= 1 || mfP > 0) && !prof.hv) {
-        const cnt = ((exh >= 2 || ecu >= 2) ? 4 + Math.floor(Math.random() * 6) : 1 + Math.floor(Math.random() * 3)) + Math.round(mfP * (3 + Math.random() * 4));      // mfP: アフターファイヤーの出やすさ
+      const pL = sx.popL < 0 ? Math.max(exh, ecu) : sx.popL;      // v30: 純正と同じ判定（-1）か、部品から導いた出やすさ（0 / 1 / 2）
+      if (r1 > 2400 && (pL >= 1 || mfP > 0) && !prof.hv) {
+        const cnt = (pL >= 2 ? 4 + Math.floor(Math.random() * 6) : 1 + Math.floor(Math.random() * 3)) + Math.round(mfP * (3 + Math.random() * 4));      // mfP: アフターファイヤーの出やすさ
         let t = 0.05; this.pops = []; this.popIdx = 0; this.popClock = 0;
         for (let i = 0; i < cnt; i++) { t += 0.05 + Math.random() * 0.18; this.pops.push({ t, amp: (0.5 + Math.random() * 0.5) * (0.5 + 0.25 * (exh + ecu)) }); }
       }
     }
     // ---- 管の共鳴の設定 ----
-    const D1 = clamp(Math.round(sr * 2 * prof.pipe / 343), 20, 4000), D2 = clamp(Math.round(sr * 2 * prof.muff * (s.mfM || 1) / 343), 20, 4000), D3 = clamp(Math.round(sr * 2 * 0.32 / 343), 20, 4000);
+    const D1 = clamp(Math.round(sr * 2 * prof.pipe / 343), 20, 4000), D2 = clamp(Math.round(sr * 2 * prof.muff * (s.mfM || 1) / 343), 20, 4000), D3 = clamp(Math.round(sr * 2 * (prof.inLen || 0.32) / 343), 20, 4000);
     const gp = clamp(prof.g + 0.1 * load + 0.07 * exh - 0.1 * inside, 0.2, 0.85);
     const kdamp = clamp(0.15 + 0.5 * load + 0.12 * exh + 0.05 * ecu + 0.15 * mfR, 0.1, 0.92);         // 管内の高音の減衰（開くほど明るい）
     const kout = clamp(0.1 + 0.28 * load + 0.1 * exh + 0.12 * mfR - 0.1 * inside, 0.06, 0.75) * (1 - 0.3 * (prof.tbm || 0));       // 出口の音色（ターボ車はタービンが排気の脈動をならして丸い音）
     const dec = clamp(prof.dec + 0.05 * (1 - load) - 0.02 * ecu, 0.7, 0.97);
-    const exGain = prof.ex * (0.5 + 0.5 * Math.pow(load, 0.7)) * (1 + 0.28 * exh + 0.1 * ecu) * (1 - 0.25 * this.ovr) * (1 - p.ev) * (1 - 0.62 * inside) * 0.055;
-    const inGain = prof.intk * (0.18 + 0.82 * Math.pow(load, 1.2)) * (1 + 0.45 * ink) * (1 - p.ev * 0.85) * (0.6 + 0.8 * inside) * (0.35 + 0.65 * Math.min(1, r1 / 5000)) * (1 + 0.7 * (prof.nai || 0) * ss(2800, 7000, r1)) * (1 + 0.5 * (p.mid || 0) * inside) * 0.045;      // 自然吸気は高回転で吸気の音が太くなる。エンジンが後ろの車は車内で吸気・機械の音が近い
-    const orderMix = (0.5 + 0.55 * inside) * 1.0;
+    const exGain = prof.ex * (0.5 + 0.5 * Math.pow(load, 0.7)) * (1 + 0.28 * exh + 0.1 * ecu) * (1 - 0.25 * this.ovr) * (1 - p.ev) * (1 - 0.62 * inside) * this.pwk * 0.055;
+    const inGain = prof.intk * (0.18 + 0.45 * sx.itb + 0.82 * Math.pow(load, 1.2)) * (1 + 0.45 * ink) * (1 - p.ev * 0.85) * (0.6 + 0.8 * inside) * (0.35 + 0.65 * Math.min(1, r1 / 5000)) * (1 + 0.7 * (prof.nai || 0) * ss(2800, 7000, r1)) * (1 + 0.5 * (p.mid || 0) * inside) * 0.045;      // 自然吸気は高回転で吸気の音が太くなる。エンジンが後ろの車は車内で吸気・機械の音が近い
+    const orderMix = (0.5 + 0.55 * inside * (1 + sx.mount)) * 1.0;
     const knF1 = 2 * Math.sin(Math.PI * 1600 / sr), knF2 = 2 * Math.sin(Math.PI * Math.min(sr * 0.2, 3000) / sr);
     const knockA = (prof.knock || 0) * 0.05 * (0.4 + 0.6 * load) * (1 - 0.85 * this.ovr) /* 燃料カット中は燃えないので打音も無い */ * (1 - p.ev) * (1 - ss(2500, 4200, r1) * 0.5) * (1 - 0.4 * inside);
-    const raspA = prof.knock || prof.hv || prof.ordT ? 0 : 0.0105 * (prof.vol || 1) * Math.pow(load, 1.25) * (0.35 + 0.65 * Math.min(1, r1 / 5000)) * (1 + 0.45 * exh + 0.15 * ecu) * (1 - p.ev) * (1 - 0.55 * inside);      // v25: 燃焼のザラつき（ガソリン車）
+    const raspA = prof.knock || prof.hv || prof.ordT ? 0 : 0.0105 * (prof.vol || 1) * Math.pow(load, 1.25) * (0.35 + 0.65 * Math.min(1, r1 / 5000)) * (1 + 0.45 * exh + 0.15 * ecu) * (1 + sx.rasp + 0.8 * (p.nos || 0)) * (1 - p.ev) * (1 - 0.55 * inside);      // v25: 燃焼のザラつき（ガソリン車）
     const raspF = 2 * Math.sin(Math.PI * Math.min(sr * 0.2, 1700 + 900 * Math.min(1, r1 / 7000) + 500 * exh) / sr);
     const rumA = (prof.noise || 0) * 0.05 * (0.09 + 0.91 * Math.max(Math.pow(load, 0.7), clamp((r1 - 600) / 900, 0, 1))) * (1 - p.ev), nB = prof.noiseB || [1, 0, 0];   // 実測の雑音の床（走行時は線の間が −15〜−23dB）
     // 打音（ガラガラ）: 発火のたびに強まる帯域雑音。車外ではよく聞こえ、車内では壁ごしにこもる
@@ -29347,7 +29370,13 @@ class EngineSynth {
     const bodyF = 2 * Math.sin(Math.PI * 105 / sr), bodyF2 = 2 * Math.sin(Math.PI * 270 / sr);
     // ---- 実車らしさ: 燃焼ごとのばらつき（アイドルほど大きい）、アイドルの揺れ（ハイカムは「ドッドッ…」と大きく波打つ）、失火気味の不整脈、減速時のバラつき ----
     const idleR = p.idle || 800, idl = 1 - ss(idleR * 1.12, idleR * 2.6, r1), rough = clamp(p.rough || 0, 0, 1), blown = !!p.blown;
-    const cov = 0.05 + 0.1 * idl + 0.4 * rough * idl + 0.06 * (1 - load) * (1 - ss(2500, 4000, r1));
+    const cov = Math.max(0.01, 0.05 + 0.1 * idl + 0.4 * rough * idl + 0.06 * (1 - load) * (1 - ss(2500, 4000, r1)) + sx.cov);
+    const nvhG = 1 + inside * (Math.pow(10, 0.26 * sx.nvh) - 1);      // 車内の全体の音量: 遮音の質量が減る（内装・遮音材・窓・ケージ）ほど透過が増える。1 あたり約 5.2 dB
+    // v30: 部品由来の機械音（バルブの打音・ピストンスラップ・インジェクター・燃料ポンプ・ギヤのカラカラ・ナイトロ）。振幅が 0 のものは何も計算しない。軽量版（lite）は細かい音を省く
+    const LT = this.lite ? 0 : 1, cold = p.cold || 0, nosA = (p.nos || 0) * sx.nosK, vin = 0.6 + 0.8 * inside;
+    const tkA = LT * sx.tick * 0.016 * (1 + 0.9 * inside) * (1 - 0.5 * ss(3000, 7000, r1)), slA = LT * sx.slap * cold * 0.016 * (1 - 0.65 * ss(1400, 3200, r1)) * (1 - 0.4 * inside) * (0.6 + 0.6 * (1 - load));
+    const ijA = LT * sx.injT * 0.008 * (1 - 0.7 * ss(2500, 6500, r1)) * (0.7 + 0.8 * inside), pmA = LT * sx.pump * 0.006 * (1 - ss(2500, 5500, r1)) * vin;
+    const rtA = LT * sx.rattle * 0.0055 * idl * (1 - ss(0.12, 0.4, load)) * (1 - 0.35 * inside), dfW = p.dfW || 0, hmW = p.hmW || 0, nsA2 = nosA * 0.045 * (1 - 0.4 * inside);
     const lopeA = idl * (0.004 + 0.075 * rough), lopeF = 1.4 + 0.9 * rough + 0.3 * Math.sin(this.clock * 0.7);
     const eg0 = this._eg0 === undefined ? 0 : this._eg0, ig0 = this._ig0 === undefined ? 0 : this._ig0;      // v26e: 排気・吸気の音量はブロックの中で前の値から補間（急に変わってもプチッとならない）
     const burb = load < 0.05 && r1 > 1800 && !prof.hv && !blown ? 0.015 + 0.035 * (exh + mfP) : 0;
@@ -29403,8 +29432,9 @@ class EngineSynth {
           if (this.pingT > 0 && Math.random() < 0.5) this.pingE = 1;
           const de = Math.round(hd[k] * 1e-3 * sr);
           injE[(wp + de) & IM] += a * 0.15; injE[(wp + de + 1) & IM] += a * 0.35; injE[(wp + de + 2) & IM] += a * 0.35; injE[(wp + de + 3) & IM] += a * 0.15;      // v26e: 立ち上がりを 4 サンプルに
-          injI[(wp + 90 + de) & IM] += a * 0.12; injI[(wp + 91 + de) & IM] += a * 0.28; injI[(wp + 92 + de) & IM] += a * 0.28; injI[(wp + 93 + de) & IM] += a * 0.12;      // v26e: 吸気側も同じく 4 サンプルに
+          injI[(wp + 90 + de) & IM] += a * 0.12 * itbK; injI[(wp + 91 + de) & IM] += a * 0.28 * itbK; injI[(wp + 92 + de) & IM] += a * 0.28 * itbK; injI[(wp + 93 + de) & IM] += a * 0.12 * itbK;      // v26e: 吸気側も同じく 4 サンプルに
           this.knock = 1;
+          if (tkA > 0) RS.tk = Math.max(RS.tk, 0.6 + 0.4 * Math.random()); if (slA > 0) RS.sp = Math.max(RS.sp, 0.6 + 0.4 * Math.random()); if (ijA > 0) RS.ij = 1; if (rtA > 0) RS.rt = Math.max(RS.rt, 0.5 + 0.5 * Math.random());
           if (clA > 0) { const cgk = CL.cg[k] * (1 + 0.3 * (Math.random() - 0.5)); if (cgk > this.clE) this.clE = cgk; }
         }
       }
@@ -29448,6 +29478,17 @@ class EngineSynth {
         sum += clA * (1 - clD + clD * this.clE) * (CL.gw * wide * 2.2 + clGa * c[4] * 0.9 + CL.gb * c[6] * 0.5); this.clE *= clDk; }
       st.n1 += (nz - st.n1) * (0.04 + 0.08 * load); st.n2 += (st.n1 - st.n2) * 0.15;
       sum += st.n2 * flowA * 3.0 + hp * mechA * 0.5;
+      if (sx.mech) sum += hp * mechA * 0.5 * sx.mech;      // v30: 機械の音（燃えない部分の唸り）の増減
+      if (RS.tk > 0.002) { sum += RS.tk * tkA * hp * 3.0; RS.tk *= 0.986; }      // バルブ周りの打音（高い「チッ」）
+      if (RS.sp > 0.002) { RS.sl += (nz - RS.sl) * 0.16; RS.sm += (RS.sl - RS.sm) * 0.04; sum += RS.sp * slA * (RS.sl - RS.sm) * 8; RS.sp *= 0.993; }      // 冷間のピストンスラップ（中低域の「コトコト」）
+      if (RS.ij > 0.002) { sum += RS.ij * ijA * hp * 4.0; RS.ij *= 0.972; }      // インジェクターの作動音（短い「カチッ」）
+      if (RS.rt > 0.002) { RS.rtn += (hp - RS.rtn) * 0.5; sum += RS.rt * rtA * RS.rtn * 5.0; RS.rt *= 0.9972; }      // アイドルのギヤのカラカラ（歯が打ち合う短い高音）
+      if (pmA > 0) { RS.pmPh += TAU * 318 / sr; if (RS.pmPh > TAU) RS.pmPh -= TAU; RS.pmPh2 += TAU * 1710 / sr; if (RS.pmPh2 > TAU) RS.pmPh2 -= TAU; sum += pmA * (Math.sin(RS.pmPh) + 0.4 * Math.sin(2 * RS.pmPh + 0.6) + 0.35 * Math.sin(RS.pmPh2)); }      // 燃料ポンプのモーターの唸り
+      if (dfW > 0) { RS.dfPh += TAU * p.dfF / sr; if (RS.dfPh > TAU) RS.dfPh -= TAU; sum += dfW * (Math.sin(RS.dfPh) + 0.35 * Math.sin(2 * RS.dfPh + 0.4)) * (0.5 + inside); }      // デフ（ピニオンの歯が噛む周波数）の唸り
+      if (hmW > 0) { RS.hmPh += TAU * p.hmF / sr; if (RS.hmPh > TAU) RS.hmPh -= TAU; sum += hmW * (Math.sin(RS.hmPh) + 0.4 * Math.sin(2 * RS.hmPh + 1.1)) * (0.4 + 0.9 * inside); }      // プロペラシャフトのうなり
+      if (nsA2 > 0 || RS.nsClk > 0.002) {      // ナイトロ: 噴射ノズルのヒス（広い帯域の「シュー」）。プログレッシブはソレノイドが速く開閉して「ブーン」と脈打つ
+        RS.ns1 += (nz - RS.ns1) * 0.45; const hs = nz - RS.ns1; let nm = 1; if (sx.nosP) { RS.nsBz += 28 / sr; if (RS.nsBz >= 1) RS.nsBz -= 1; nm = 0.55 + 0.45 * Math.sign(0.5 - RS.nsBz); }
+        sum += nsA2 * hs * 1.6 * nm; if (RS.nsClk > 0.002) { sum += RS.nsClk * 0.18 * hp; RS.nsClk *= 0.993; } }
       if (vacA > 0.00005) { const vs = st.vs || (st.vs = [0, 0]); const lpv = vs[0] + vacF * vs[1], hpv = nz - lpv - 0.5 * vs[1]; vs[1] += vacF * hpv; vs[0] = lpv; sum += vacA * vs[1] * 2.4; }
       if (rumA > 0) { st.r1 += (nz - st.r1) * 0.055; st.r2 += (st.r1 - st.r2) * 0.055; st.r3 += (nz - st.r3) * 0.2; st.r4 += (st.r3 - st.r4) * 0.2; sum += rumA * (nB[0] * (st.r1 * 0.6 + st.r2 * 1.6) + nB[1] * (st.r4 - st.r2) + nB[2] * (nz - st.r3)); }
       // ---- ターボ ----
@@ -29613,8 +29654,9 @@ class EngineSynth {
       if (outS) outS[i] = Math.tanh(sS * p.vol * 1.4) * 0.8;
       if (outC) outC[i] = Math.tanh(sC * p.vol * 1.2) * 0.85;
       // ---- レブリミッター ----
-      if (p.lim) { this.limT += 1 / sr; sum *= 0.1 + 0.9 * (0.5 + 0.5 * Math.tanh(Math.sin(TAU * 13 * this.limT) * 9 + 0.9)); }
-      out[i] = Math.tanh(sum * p.vol * 1.3) * 0.85;
+      if (p.lim) { this.limT += 1 / sr; sum *= limD + (1 - limD) * (0.5 + 0.5 * Math.tanh(Math.sin(TAU * limHz * this.limT) * 9 + 0.9));
+        if (limPop > 0) { RS.limPh += limHz / sr; if (RS.limPh >= 1) { RS.limPh -= 1; if (Math.random() < limPop) { this.popEnv = Math.max(this.popEnv, 0.35 + 0.45 * Math.random()); this.popPh = 0; } } } }      // 点火カットのたびに未燃焼ガスが排気で爆ぜる（v30）
+      out[i] = Math.tanh(sum * p.vol * 1.3 * nvhG) * 0.85;
     }
     this.ci = ci & MASK; this.wp = wp & IM; this.clock += n / sr;      // v26e: 内部時計はここで 1 回だけ進める（以前は 2 回足していて、アイドルの揺れなどが倍の速さだった）
     for (let k = 0; k < N; k++) a0[k] = a1[k];
@@ -29706,6 +29748,9 @@ G.audioStart = function () {
     // ジェットファン（天井の換気扇）の唸り、坑口を出入りするときの風圧の「ボッ」
     this.jfanN = mk('bandpass', 160, 1.4); this.jfanH = mk('bandpass', 620, 2.5); this.jfanN.g.connect(tunIn);
     this.portN = mk('lowpass', 90, 1.2); this.portN.g.connect(tunIn); this.jointN = mk('lowpass', 240, 1.0); this.jointN.g.connect(tunIn);
+    // v30: 部品由来の環境音（ブレーキ鳴き・パッドのゴリゴリ・スリットローターのウォーン・電動ファン・タイヤの空洞共鳴 約 215Hz）
+    this.rlBS = mk('bandpass', 3100, 16); this.rlBG = mk('lowpass', 560, 0.9); this.rlBW = mk('bandpass', 5200, 3.0); this.rlFan = mk('bandpass', 420, 0.9); this.rlTH = mk('bandpass', 215, 3.2);
+    for (const n of [this.rlBS, this.rlBG, this.rlBW, this.rlFan, this.rlTH]) n.g.connect(tunIn);
   } catch (e) { this.AC = null; }
 };
 /* 覆工の継ぎ目を踏む「ゴトッ」（トンネルの中だけ。10.5m ごと。速いほど強い） */
@@ -29789,6 +29834,7 @@ G.audioUpdate = function (dt) {
   if (!this.AC || !this.synth) return;
   dt = dt || 0.016;
   const AC = this.AC, t = AC.currentTime, drive = this.mode === 'drive', P = this.P, c = this.spec, p = this.synth.p;
+  const RK = HW.RLS ? HW.RLS.env(c, drive && this.camMode === 2) : { q: 1, wind: 1, road: 1, tire: 1, tireHz: 0, thump: 1, hum: 0 };      // v30: 部品ごとの風切り・ロードノイズ・突き上げの倍率（車内は遮音の薄さも）
   let rpm, load, sp = 0;
   if (this.master) { const quiet = this.mode !== 'drive' && !(this.demoT < 2.6), vol = this.muted || quiet ? 0 : (this.volume === undefined ? 0.55 : this.volume); this.master.gain.setTargetAtTime(vol, t, quiet ? 0.08 : 0.03); }      // ガレージでは、空ぶかしのデモ以外は無音（アイドル音・走行音を出さない）
   if (drive) { rpm = this.pt.rpm; load = P.thr; sp = P.v; this.demoT = 99;
@@ -29866,15 +29912,15 @@ G.audioUpdate = function (dt) {
     this.wasInT = inT;
   }
   // 風切り音・ロードノイズ・タイヤ
-  const q = interior ? 0.55 + 0.6 * wk : 1, sv = Math.min(1, sp / 42);
-  this.windA.g.gain.setTargetAtTime(Math.pow(sv, 2) * 0.1 * q, t, 0.1);
+  const q = (interior ? 0.55 + 0.6 * wk : 1) * RK.q, sv = Math.min(1, sp / 42);
+  this.windA.g.gain.setTargetAtTime(Math.pow(sv, 2) * 0.1 * q * RK.wind, t, 0.1);
   this.windA.f.frequency.setTargetAtTime(500 + sv * 700, t, 0.2);
-  this.windB.g.gain.setTargetAtTime(Math.pow(sv, 3) * 0.025 * q, t, 0.1);
-  this.roadN.g.gain.setTargetAtTime(Math.min(1, sp / 30) * 0.09 * (interior ? 1.2 : 0.8) * (1 + 0.5 * tun) * (1 - 0.5 * ((HW.wx && HW.wx.cover) || 0)), t, 0.1);      // 雪は走行音を吸う
+  this.windB.g.gain.setTargetAtTime(Math.pow(sv, 3) * 0.025 * q * RK.wind, t, 0.1);
+  this.roadN.g.gain.setTargetAtTime(Math.min(1, sp / 30) * 0.09 * (interior ? 1.2 : 0.8) * RK.road * (1 + 0.5 * tun) * (1 - 0.5 * ((HW.wx && HW.wx.cover) || 0)), t, 0.1);      // 雪は走行音を吸う
   // タイヤの走行音（ロードノイズ）: 速いほど大きく高くなる。細いタイヤ・トレッドの大きいタイヤほど鳴る（c.snd.tire）。雨の路面ではさらに大きい
   { const tk = (c.snd && c.snd.tire) || 0, wet = (HW.wx && HW.wx.wet) || 0, sk = Math.min(1, sp / 28);
-    this.tireN.g.gain.setTargetAtTime(sk * (0.12 + 0.05 * wet) * (1 + 1.2 * tk) * q, t, 0.12);
-    this.tireN.f.frequency.setTargetAtTime(850 + 16 * Math.min(sp, 40) + 260 * tk, t, 0.25); this.tireN.f.Q.setTargetAtTime(0.7 + 0.5 * tk, t, 0.25); }
+    this.tireN.g.gain.setTargetAtTime(sk * (0.12 + 0.05 * wet) * (1 + 1.2 * tk) * q * RK.tire, t, 0.12);
+    this.tireN.f.frequency.setTargetAtTime(850 + 16 * Math.min(sp, 40) + 260 * tk + RK.tireHz, t, 0.25); this.tireN.f.Q.setTargetAtTime(0.7 + 0.5 * tk, t, 0.25); }
   if (this.fanN) { const hv = this.HV, fan = drive && hv ? hv.fan : 0; this.fanN.g.gain.setTargetAtTime([0, 0.012, 0.024, 0.04, 0.062][fan] * (interior ? 1 : 0.12) * (hv && hv.mode === 2 ? 1.25 : 1), t, 0.25); this.fanN.f.frequency.setTargetAtTime(400 + 95 * fan, t, 0.3); }      // 送風の音は風量で変わる
   // スキール音: グリップの限界を超えた度合いで鳴る。濡れた路面では鳴きが弱く、低くなる
   if (this.skidA) {
@@ -29890,7 +29936,7 @@ G.audioUpdate = function (dt) {
   // 路面の継ぎ目（ガタン・ガタン）: 前輪と後輪で2回
   const jn = Math.floor(P.s / 21);
   if (this.lastJoint !== undefined && jn !== this.lastJoint && sp > 5) {
-    const a = Math.min(1, sp / 28) * 0.22 * (interior ? 1 : 0.45) * (1 + 0.6 * tun);
+    const a = Math.min(1, sp / 28) * 0.22 * (interior ? 1 : 0.45) * RK.thump * (1 + 0.6 * tun);
     const g1 = this.thumpN.g.gain, tt = AC.currentTime, dly = (c.wb || 2.7) / Math.max(sp, 3);
     g1.cancelScheduledValues(tt); g1.setValueAtTime(a, tt); g1.setTargetAtTime(0, tt + 0.01, 0.05);
     g1.setValueAtTime(a * 0.8, tt + dly); g1.setTargetAtTime(0, tt + dly + 0.01, 0.05);
@@ -30435,6 +30481,7 @@ G.refreshStat = function () {
   if (c.shopIss && c.shopIss.length) h += '<div class="gswarn bad">作業の不具合: ' + esc(c.shopIss.map((q) => q.name).join('、')) + ' ― 「整備工場」から再作業で直せます</div>';
   if (rr) h += !rr.done ? '<div class="gswarn">実走の確認（熱・吸気温・部品の傷みを入れた全開走行）を計算中…</div>' : rr.err ? '' : rb ? '<div class="gswarn bad">実走の確認: 全開で約 ' + rb.blowT.toFixed(1) + ' 秒（' + Math.round(rb.blowV) + ' km/h）でエンジンが壊れます（壊れる部品: ' + esc(rb.why || '') + '）。「出力の限界」で弱い部品を確認し、強化するかブーストを下げてください</div>'
     : '<div class="gswarn">実走の確認（熱・吸気温・傷みあり・外気 25℃）: 0→100km/h ' + (rr.t100 ? rr.t100.toFixed(1) + ' 秒' : '未達') + ' ・ 0→400m ' + (rr.qm ? rr.qm.toFixed(1) + ' 秒' : '未達') + ' ・ 最高速 ' + Math.round(Math.min(rr.vmax, c.limiter || 9999)) + ' km/h</div>';
+  if (HW.RL) { const rl = HW.RL.of(c), grp = [['snd', '音'], ['eng', 'エンジン・熱・扱いやすさ'], ['chs', '足まわり・乗り味']]; let hh = ''; for (const [ns, nm] of grp) { const cd = rl[ns] && rl[ns].card; if (cd && cd.length) hh += '<div class=\"gscg\"><u>' + nm + '</u>' + cd.map((r) => '<span class=\"gsc ' + (r.good > 0 ? 'up' : r.good < 0 ? 'dn' : '') + '\"><i>' + esc(r.label) + '</i>' + esc(r.txt) + '</span>').join('') + '</div>'; } if (hh) h += '<div class=\"gschar\"><b>部品で変わった性格</b>' + hh + '</div>'; }      // v30
   E.gstat.innerHTML = h;
 };
 G.tuPush = function () { const id = this.base.id, h = (this.tuHist = this.tuHist || {})[id] || (this.tuHist[id] = []); h.push(JSON.stringify(this.tunes[id])); if (h.length > 40) h.shift(); };
@@ -30659,15 +30706,15 @@ G.advUI = function (tune, host, only) {
   const apply = () => { this.retune(); this.resetPlayer(0); this.refreshGarage(); };
   for (const gname of groups) {
     if (only && gname !== only) continue;
-    const key = '詳細: ' + gname, open = only ? true : !!(this.tuneOpen || {})[key], items = sc.list.filter((x) => x.grp === gname), nChg = items.filter((x) => adv[x.key] !== undefined && adv[x.key] !== x.def).length;
+    const key = '詳細: ' + gname, open = only ? true : !!(this.tuneOpen || {})[key], items = sc.list.filter((x) => x.grp === gname), nChg = items.filter((x) => (adv[x.key] !== undefined && adv[x.key] !== x.def) || (adv[x.key] === undefined && c.chs && c.chs.shift && c.chs.shift[x.key] !== undefined)).length;
     const gh = document.createElement('button'); gh.type = 'button'; gh.className = 'tgrp'; gh.setAttribute('aria-expanded', String(open));
     gh.innerHTML = '<span>詳細セッティング: ' + esc(gname) + '</span><small>' + (nChg ? nChg + '項目変更' : items.length + '項目（数値）') + '</small><i>' + (open ? '−' : '＋') + '</i>';
     gh.addEventListener('click', () => { this.tuneOpen[key] = !open; this.refreshTune(); });
     const gb = document.createElement('div'); gb.className = 'tgbox'; gb.hidden = !open; { const tgt = host || E.tune; if (!only) tgt.appendChild(gh); tgt.appendChild(gb); }
     if (!open) continue;
     for (const x of items) {
-      const cur = adv[x.key] !== undefined ? adv[x.key] : x.def, row = document.createElement('div'); row.className = 'advrow';
-      const lab = document.createElement('span'); lab.textContent = x.label + '（純正 ' + fmt(x, x.def) + '）'; const val = document.createElement('b'); val.textContent = fmt(x, cur); if (cur !== x.def) val.className = 'chg';
+      const cur = adv[x.key] !== undefined ? adv[x.key] : (c.chs && c.chs.shift && c.chs.shift[x.key] !== undefined ? c.chs.shift[x.key] : x.def), row = document.createElement('div'); row.className = 'advrow';
+      const lab = document.createElement('span'); lab.textContent = x.label + '（純正 ' + fmt(x, x.def) + '）' + (adv[x.key] === undefined && cur !== x.def ? ' ← 選んだ部品の値' : ''); const val = document.createElement('b'); val.textContent = fmt(x, cur); if (cur !== x.def) val.className = 'chg';
       row.appendChild(lab); row.appendChild(val);
       if (x.opts && x.opts.length > 2 || x.key === 'tv' || x.key === 'spool') {
         const se = document.createElement('select'); se.setAttribute('aria-label', x.label); x.opts.forEach((o, i) => { const op = document.createElement('option'); op.value = i; op.textContent = o; if (i === (cur | 0)) op.selected = true; se.appendChild(op); });
@@ -34361,7 +34408,7 @@ X.late = function () {
     if (fx.dead) F = 0;
     // クラッチが急につながったときの衝撃: 滑りが急に減る → 駆動系の部品への負荷が一瞬大きくなる
     const ds = dt > 0 ? (s0 - (this.slipRpm || 0)) / dt : 0;
-    xs.shock = 1 + 0.8 * clampV(ds / 9000, 0, 1) * ss(250, 1500, s0);
+    xs.shock = 1 + 0.8 * (this.car.rlE && this.car.rlE.shock || 1) * clampV(ds / 9000, 0, 1) * ss(250, 1500, s0);
     return F;
   };
   PT.update.__x = true;
@@ -34385,7 +34432,7 @@ X.late = function () {
     let T; try { T = cl0.call(this, Te, base, dt, v, drv); } finally { a.clutchNm = nm0; }
     // クラッチが急につながったときの衝撃（滑りが急に減る）: 駆動系の部品への負荷が一瞬大きくなる
     const ds = dt > 0 ? (s0 - this.slipRpm) / dt : 0;
-    xs.shock = 1 + 0.8 * clampV(ds / 9000, 0, 1) * ss(250, 1500, s0);
+    xs.shock = 1 + 0.8 * (this.car.rlE && this.car.rlE.shock || 1) * clampV(ds / 9000, 0, 1) * ss(250, 1500, s0);
     return T;
   }; }
 
@@ -34465,7 +34512,7 @@ X.coolStep = function (game, dt) {
   const open = cl ? cl.thm : 90, thermo = clampV((P.wT - (open - 4)) / 8, 0.01, 1);
   const fanK = cl ? cl.fan : 1, radK = cl ? cl.rad : 1, wpK = cl ? 0.9 + 0.1 * cl.wp : 1;
   // 走行風が弱いとき（渋滞）はファンの風量が効く
-  const airflow = 0.8 + 0.012 * (c.kw || 60) + 1.6 * sp + (fanK - 1) * 0.9 * (1 - sp) * (0.6 + 0.012 * (c.kw || 60));
+  const kwR = HW.RL.ENG.kwRad(c), airflow = 0.8 + 0.012 * kwR + 1.6 * sp + (fanK - 1) * 0.9 * (1 - sp) * (0.6 + 0.012 * kwR);      /* v30: 放熱は純正の出力に合わせた大きさ */
   const xe = c.xe, fanOn = xe && xe.tier >= 3 && xe.fan ? xe.fan : 98, fanBoost = P.wT > fanOn ? 1.15 : 1;
   const hW = airflow * radK * wpK * thermo * fanBoost;
   P.wT = clampV(P.wT + (1.25 * kw - hW * (P.wT - amb)) / 30 * dt, -20, 175);
@@ -34525,6 +34572,7 @@ X.gameTick = function (game, dt) {
   if (xs.op && xs.op.ret > 6) game.bdSay && game.bdSay('xret', 12, 'ECU がノッキングを抑えるため点火を大きく引いています（出力が落ちます。燃料・ブースト・吸気温を見直してください）', true);
   if (xs.op && xs.op.lean > 0.12) game.bdSay && game.bdSay('xlean', 12, '燃料が足りず、空燃比が薄くなっています（ノッキング・ピストン溶損の危険）― 全開を控えてください', true);
   if (xs.nos.on && xs.nos.lb < 0.5) game.bdSay && game.bdSay('xnos', 6, 'ニトロのボトルが残りわずかです', true);
+  if (HW.RL && HW.RL.ENG) HW.RL.ENG.tick(game, dt);      /* v30: エンスト・高温・水メタノール切れの警告 */
 };
 
 /* ---------------- タイヤ・ブレーキの傷み（ゲームの走行中のタイヤ温度・ブレーキ温度から）----------------
@@ -37211,7 +37259,7 @@ H.TUNE.stockMetrics=function(base){
 };
 G.retune=function(){
  const b=this.base,tune=this.tunes[b.id]||(this.tunes[b.id]=H.TUNE.blankTune());
- this.tuned=H.TUNE.buildSpec(b,tune);this.pt=new H.Powertrain(this.tuned);this.pt.manual=!!this.mt;
+ this.tuned=H.TUNE.buildSpec(b,tune);if(H.RL)H.RL.prep(this.tuned);this.pt=new H.Powertrain(this.tuned);this.pt.manual=!!this.mt;
  if(H.applyLooks&&this.pc)H.applyLooks(this.pc,this.tuned);
  if(H.applyCargo&&this.pc){try{H.applyCargo(this.pc,this.tuned,b);}catch(e){console.warn('cargo visual failed',e);}}
  this.benchPending=true;this.zero100=this.topKmh=this.topPot=0;
@@ -37780,9 +37828,9 @@ H.disposeNpcFreight = function (mesh) {
     let peak = Math.max(1, c.nm || 0); for (const q of c.torque || []) peak = Math.max(peak, +q[1] || 0);
     const cap = Math.max(1, a.clutchNm || peak * (kind === 'MT' ? 1.3 : 1.45));
     // Scaling uses the engine's torque class and installed flywheel, with finite limits for unusual swaps.
-    const J = clamp((0.08 + 0.00055 * peak) * clamp(a.flyIK || 1, 0.15, 8), 0.07, 160);
+    const J = clamp((0.08 + 0.00055 * peak) * clamp(a.flyIK || 1, 0.15, 8) * (c.rlE && c.rlE.flyK || 1), 0.07, 160);      /* v30: 部品で変わる回転部分の慣性 */
     pt.shiftKind = kind;
-    return pt._dl = { kind, truck, peak, cap, J, fr: FR[a.clFr] || FR.org, heatCap: 5000 + 12 * cap };
+    return pt._dl = { kind, truck, peak, cap, J, fr: FR[a.clFr] || FR.org, heatCap: (5000 + 12 * cap) * (c.rlE && c.rlE.heatK || 1) };      /* v30: 軽いフライホイールは熱容量が小さい */
   }
   P.reset = function () {
     nativeReset.call(this); this.vGnd = undefined; this._dl = null; this._crankW = Math.max(1, this.car.idle || 700) * RAD;
@@ -37898,6 +37946,7 @@ H.disposeNpcFreight = function (mesh) {
       Te -= engineDrag * (1 - smooth(t / 0.1));
       if (alive && shifting && (d.kind === 'MT' || d.kind === 'AMT')) Te -= d.peak * (0.07 + 0.2 * Math.pow(clamp(rpm / red, 0, 1.2), 1.5)) * (1 - clamp(throttle, 0, 1));
       if (alive && rpm < idle * 1.04) Te += clamp((idle * 1.04 - rpm) * RAD * d.J / 0.09, 0, d.peak * 0.22);
+      if (c.rlE && c.rlE.idle) Te += H.RL.ENG.lowTq(pt, c.rlE, d, alive, rpm, t, h, idle, shifting, launching, driveW);      /* v30: アイドルの燃焼のばらつき・ローピング・エンスト */
       if (pt.knockT > 0) { pt.knockT = Math.max(0, pt.knockT - h); Te *= 0.88; }
       const fade = 1 - d.fr[1] * smooth((pt.clutchTempC - 170) / 260);
       const capStatic = d.cap * fade, slipW = w - driveW;
@@ -37938,6 +37987,7 @@ H.disposeNpcFreight = function (mesh) {
           engagement *= clamp(wanted / Math.max(1, capacity), 0, 1);
           if (t < 0.015 && driveW < idle * RAD) engagement = 0;
         }
+        if (pt.rlClutchK !== undefined && pt.rlClutchK !== null) engagement = pt.rlClutchK;      /* v30: 運転者のクラッチ操作 */
         const cap = capacity * engagement;
         const syncRelax = Math.max(0.04, h);
         const sync = Te + (w - driveW) * Jx / syncRelax;
@@ -37947,6 +37997,7 @@ H.disposeNpcFreight = function (mesh) {
         else {
           // An impulse cannot cross synchronism: residual relative kinetic energy becomes clutch heat.
           torque = clamp(sync, -cap, cap);
+          if (c.rlE && c.rlE.judder > 0 && launching) { pt._rlJ = (pt._rlJ || 0) + h * 62; torque *= 1 + c.rlE.judder * Math.sin(pt._rlJ); }      /* v30: ジャダー（約 10 Hz）*/
           const before = w; w = Math.max(0, w + (Te - torque) * h / d.J);
           w = Math.min(red * 1.045 * RAD, w);
           slipPower = Math.max(0, torque * ((before + w) * 0.5 - driveW));
@@ -45501,6 +45552,1167 @@ L.room({ id: 'sb12', no: 12, grp: 'sb', name: '作業場（歩いて作る）', 
   reset() { const w = this.view.walk; ST.rooms[w.rid] = []; save(); if (w.vox) { w.vox.group.parent && w.vox.group.parent.remove(w.vox.group); w.vox = null; } for (const b of w.bodies.slice()) w.removeBody(b); w.ensureVox({ gen: true }); w.spawn(); L.toast('地形を作り直しました'); }
 });
 function btn2(t, f, c) { return L.btn(t, f, c); }
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ================= v30 リアリズム層の共通部（RL）=================
+   部品を付けたときに「速くなるだけ」にならないように、選んだ部品の実在の物理（寸法・材質・方式）から、
+   音・応答・熱・重量配分・乗り心地・耐久などの「性格」を導く。
+   使い方:
+     RL.mod('名前', (ctx, out) => { out.名前 = {...} })    // 部品の選択から特性を作る（スペックを組み立てたあと、必要になったときに 1 回だけ計算）
+     c.rl                                                    // スペックの特性（RL.of(c) なら、無いときは純正の値）
+     ctx = { c, base, tune, sel, eng, has(key), opt(key), name(key), re(key, /正規表現/) }
+   ・sel: 選ばれている部品の一覧 [{ key, cat, opt }]（純正のままの区分は含まれない）
+   ・特性はスペックの組み立てを遅くしないよう、c.rl を最初に読んだときに計算する（お任せ見積もりのように何千回も組み立てても重くならない）
+   ・名前の付いた担当（sound / eng / chs ...）が、それぞれ自分の名前の下に値を入れる */
+(function (g) {
+'use strict';
+const HW = g.HW; if (!HW || !HW.TUNE || HW.RL) return;
+const T = HW.TUNE, RL = HW.RL = { mods: [], by: {}, stock: {}, VERSION: 1 };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+RL.clamp = clamp; RL.lerp = (a, b, t) => a + (b - a) * t; RL.ss = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+/* 選ばれている部品（純正のままの区分は除く）。buildSpec と同じ規則で選ぶ */
+RL.sel = function (base, tune) {
+  const cats = T.catsOf(base, tune), sel = cats.map((cat) => cat.list.find((o) => o.id === tune[cat.key]) || cat.list[0]);
+  if (HW.X && HW.X.overrideSel) { try { HW.X.overrideSel(sel, cats); } catch (e) { /* なし */ } }
+  const out = []; cats.forEach((cat, i) => { const o = sel[i]; if (o && o !== cat.list[0] && o.id !== 0) out.push({ key: cat.key, cat, opt: o }); }); return out; };
+RL.mod = function (name, fn) { RL.mods.push({ name, fn }); RL.by[name] = fn; };
+RL.derive = function (c, base, tune) {
+  const sel = RL.sel(base, tune), byKey = {}; for (const s of sel) byKey[s.key] = s;
+  let eng = null; try { eng = T.applySwap ? T.applySwap(base, T.swapOf(tune)) : base; } catch (e) { eng = base; }
+  const ctx = { c, base, tune, sel, eng, byKey, has: (k) => !!byKey[k], opt: (k) => (byKey[k] ? byKey[k].opt : null), name: (k) => (byKey[k] ? byKey[k].opt.name : ''),
+    re: (k, re) => !!(byKey[k] && re.test(byKey[k].opt.name)), any: (keys) => keys.some((k) => !!byKey[k]), fx: (k) => (byKey[k] ? byKey[k].opt : {}), turbo: c.boostCfg || null };
+  const out = { sel, stock: !sel.length };
+  for (const m of RL.mods) { try { m.fn(ctx, out); } catch (e) { if (g.console && !RL._warned) { RL._warned = 1; console.warn('RL mod ' + m.name + ': ' + (e && e.stack || e)); } } }
+  return out; };
+RL.of = (c) => (c && c.rl) || RL.stock;
+/* buildSpec の戻り値に、遅延評価の c.rl を付ける */
+{ const B0 = T.buildSpec;
+  T.buildSpec = function (base, tune) {
+    const c = B0.apply(this, arguments); if (!c || typeof c !== 'object') return c;
+    const snap = tune ? Object.assign({}, tune) : {}; if (tune && tune.adv) snap.adv = Object.assign({}, tune.adv); let memo = null;      // 後から選び直されても、組み立てた時点の選択で導く（浅い複製: お任せ見積もりで何千回も呼ばれても軽い）
+    try { Object.defineProperty(c, 'rl', { configurable: true, enumerable: false, get() { if (!memo) memo = RL.derive(c, base, snap); return memo; }, set(v) { memo = v; } }); } catch (e) { /* なし */ }
+    return c; }; }
+/* 差分: 2 つの特性の、数値の違うキーの一覧（検査用） */
+RL.flat = (o, p, r, d) => { r = r || {}; d = d || 0; if (!o || d > 5) return r; for (const k in o) { if (k === 'sel' || k === 'stock') continue; const v = o[k], kk = p ? p + '.' + k : k; if (typeof v === 'number') r[kk] = v; else if (typeof v === 'boolean') r[kk] = v ? 1 : 0; else if (typeof v === 'string') r[kk] = v; else if (Array.isArray(v) && v.length < 80 && typeof v[0] === 'number') r[kk] = v.reduce((a, b) => a + b, 0); else if (v && typeof v === 'object' && !v.isObject3D && typeof v !== 'function') RL.flat(v, kk, r, d + 1); } return r; };
+RL.diff = (a, b) => { const fa = RL.flat(a), fb = RL.flat(b), ks = []; for (const k in fa) if (fb[k] === undefined || (typeof fa[k] === 'number' ? Math.abs(fa[k] - fb[k]) > 1e-9 * Math.max(1, Math.abs(fa[k])) : fa[k] !== fb[k])) ks.push(k); for (const k in fb) if (fa[k] === undefined) ks.push(k); return ks; };
+/* 検査: 区分ごとに、各部品が「純正と比べて特性（c.rl）のどこを変えるか」を数える。ns に担当の名前を渡すと、その担当の値だけを見る */
+RL.coverage = function (carId, opt) {
+  opt = opt || {}; const base = HW.CARS.find((c) => c.id === carId); if (!base) return null; const t0 = T.blankTune(), s0 = T.buildSpec(base, t0), r0 = s0.rl, cats = T.catsOf(base, t0), res = [];
+  const only = opt.keys ? new Set(opt.keys) : null, lim = opt.limit || 80;
+  for (const cat of cats) { if (!cat.list || cat.list.length < 2 || (only && !only.has(cat.key))) continue; let n = 0, dead = 0; const chg = {}, deadNames = [];
+    for (const o of cat.list.slice(1, lim + 1)) { const t = JSON.parse(JSON.stringify(t0)); t[cat.key] = o.id; let s; try { s = T.buildSpec(base, t); } catch (e) { continue; } const d = RL.diff(s.rl, r0).filter((k) => !opt.ns || k.indexOf(opt.ns + '.') === 0); n++; if (!d.length) { dead++; if (deadNames.length < 3) deadNames.push(o.name.slice(0, 22)); } for (const k of d) chg[k] = (chg[k] || 0) + 1; }
+    res.push({ key: cat.key, label: cat.label || '', n, dead, deadNames, keys: Object.keys(chg).slice(0, 14) }); }
+  return res; };
+/* ゲームが車を組み立て直したとき、特性をその場で計算しておく（走行中の最初のフレームで重くならないように） */
+RL.prep = (c) => { try { return c && c.rl; } catch (e) { return null; } };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ================= v30 チューニングの結果が「目に見える」演出（RL.fx）=================
+   ・排気の炎（アフターファイア）: 減速時のポップ（合成音のポップと同じ瞬間）・レブリミッターの点火カット・アンチラグ・ローンチ（2 ステップ）・フラットシフトで、
+     マフラーの出口から炎が出る。出やすさは排気（触媒・ストレート・競技マフラー）と ECU の設定、色は燃料で決まる
+     （ガソリン: 橙〜黄、アルコール: ほとんど見えない淡い青、LPG・CNG: 青、軽油: 出ない）。夜は目立ち、昼は薄い
+   ・ブレーキの赤熱: ローターが熱くなる（P.bT。約 450℃から橙に光り、700℃以上で明るい赤橙、900℃では黄みがかる）と、ホイールの内側がスポークの間から光る。
+     大径ローター・カーボンセラミックは熱容量・耐熱が違うので光り始めが遅い（c.fadeT）
+   どちらも、描画だけで、走りには影響しない */
+(function (g) {
+'use strict';
+const HW = g.HW, T = g.THREE; if (!HW || !HW.RL || !T || HW.RL.fxStep) return;
+const RL = HW.RL, clamp = RL.clamp, R = Math.random, FX = RL.fx = { n: 0 };
+const fuelKind = (c) => { const f = c && c.fuelP; if (!f) return 'gas'; if (f.cet !== undefined) return 'dsl'; if (f.gas) return 'lpg'; if ((f.lhv || 30) < 25 && (f.kn || 0) <= -0.9) return 'alc'; return 'gas'; };
+const COL = { gas: [1.0, 0.52, 0.1, 1.0], alc: [0.35, 0.42, 1.0, 0.45], lpg: [0.3, 0.55, 1.0, 0.8], dsl: [0, 0, 0, 0] };
+
+/* 炎 1 つぶん: 出口から後ろへ伸びる細長い炎（粒を軸に沿って並べる） */
+function flame(game, tip, back, vx, vz, len, power, kind, night) {
+  const F = game.fire || (game.fire = new HW.FireFx(game.scene)), col = COL[kind] || COL.gas; if (!col[3]) return;
+  const n = 8 + Math.round(10 * power), a0 = col[3] * (0.5 + 0.5 * night) * clamp(0.4 + power, 0.4, 1.4);
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1), d = t * len, sz = (0.05 + 0.1 * Math.sin(Math.PI * Math.min(1, t * 1.15))) * (0.7 + 0.6 * power), sp = 5 + 9 * t + R() * 2;
+    const core = 1 - t;      // 根元ほど白く熱い
+    F.emit(tip.x + back.x * d + (R() - 0.5) * 0.03, tip.y + (R() - 0.3) * 0.04 + 0.05 * t, tip.z + back.z * d + (R() - 0.5) * 0.03,
+      back.x * sp + vx * 0.9 + (R() - 0.5) * 0.8, 0.5 + R() * 1.0, back.z * sp + vz * 0.9 + (R() - 0.5) * 0.8,
+      sz, 1.4, 0.07 + 0.09 * R() + 0.05 * t, col[0] * (0.7 + 0.3 * core) + 0.3 * core, col[1] * (0.6 + 0.4 * core) + 0.35 * core * (kind === 'gas' ? 1 : 0.3), col[2] * (0.5 + 0.5 * core) + 0.2 * core, a0 * (0.55 + 0.45 * core), 0.6, 2.2, 0.9);
+  }
+}
+/* ゲーム側の毎フレームから呼ぶ（smokeStep の頭） */
+RL.fxStep = function (game, dt) {
+  if (!game || game.mode !== 'drive' || !game.pc || !game.spec) { FX.pi = undefined; return; }
+  flameStep(game, dt); glowStep(game, dt);
+};
+function flameStep(game, dt) {
+  const c = game.spec, pc = game.pc, P = game.P, syn = game.synth, pt = game.pt; if (!syn || !pt) return;
+  const kind = fuelKind(c); if (kind === 'dsl') return;
+  const rl = RL.of(c), sn = c.snd || {}, rs = rl.snd || {};
+  // 炎の出やすさ: 排気が抜けているほど・ECU が攻めているほど。音の担当が flame を決めていればそれを使う
+  const sxm = rs.sx || {}, alsOn = !!(sn.als || (rs.eff && rs.eff.als) || (sxm.popL >= 2 && sn.als)), fk = rs.flame !== undefined ? rs.flame : clamp(0.2 + 0.2 * ((sn.exh || 0) + (sn.mfL || 0)) + 0.18 * (sn.ecu || 0) + 0.3 * (sn.mfP || 0) + 0.2 * (sn.als ? 1 : 0), 0, 1.5);
+  if (fk < 0.12) { FX.pi = syn.popIdx; return; }
+  const pc0 = pc; pc0.group.updateMatrixWorld(); const hh = game.pose ? game.pose.h : P.hd || 0, bx = -Math.sin(hh), bz = Math.cos(hh), vx = Math.sin(hh) * P.v, vz = -Math.cos(hh) * P.v;
+  const back = { x: bx, z: bz }, night = clamp((game.world && game.world.nightK) || 0, 0, 1);
+  const tips = pc0.tipPos && pc0.tipPos.length ? pc0.tipPos : [new T.Vector3(c.W * 0.28, 0.3, c.L / 2 + 0.1)];
+  const fire = (power, len) => { for (const tp of tips) { const w = pc0.group.localToWorld(tp.clone()); flame(game, w, back, vx, vz, len, power, kind, night); } FX.n++; };
+  // ① 合成音のポップ（減速時の破裂音）: popIdx が進んだ瞬間 = ポップが鳴った瞬間
+  if (syn.pops && FX.pi !== undefined && syn.popIdx > FX.pi) { for (let i = FX.pi; i < syn.popIdx && i < syn.pops.length; i++) { const amp = syn.pops[i] ? syn.pops[i].amp : 0.6; if (R() < clamp(0.35 + 0.5 * fk, 0, 1)) fire(clamp(amp * 0.7, 0.2, 1), 0.3 + 0.9 * amp * fk); } }
+  FX.pi = syn.popIdx !== undefined ? syn.popIdx : 0; if (syn.pops && syn.popIdx === 0 && !syn.pops.length) FX.pi = 0;
+  // ② レブリミッター: 点火カットで未燃焼ガスが排気に流れ、ぱん・ぱんと小さく光る（ECU が攻めた設定のとき）
+  const lim = !!(syn.p && syn.p.lim) && (sn.ecu >= 2 || alsOn || c.launch2 > 0 || fk >= 0.7);
+  FX.lt = (FX.lt || 0) - dt; if (lim && FX.lt <= 0) { FX.lt = 0.06 + R() * 0.07; if (R() < 0.8) fire(0.35 + 0.3 * R(), 0.25 + 0.4 * fk * R()); }
+  // ③ アンチラグ: アクセルを離しても点火を遅らせて燃やし続け、タービンを回し続ける。過給が残っている間、排気から炎が出続ける
+  if (alsOn && (P.thr || 0) < 0.25 && pt.rpm > 3200 && (pt.boost || 0) > 0.15) { FX.at = (FX.at || 0) - dt; if (FX.at <= 0) { FX.at = 0.035 + R() * 0.05; fire(0.5 + 0.5 * (pt.boost || 0), 0.5 + 0.8 * (pt.boost || 0)); } }
+  // ④ ローンチ（2 ステップ）: 発進前の回転保持中は、点火カットの炎がリズムよく出る
+  if (c.launch2 > 0 && P.v < 4 && (P.thr || 0) > 0.7 && pt.rpm > (c.redline || 7000) * 0.4) { FX.lk = (FX.lk || 0) - dt; if (FX.lk <= 0) { FX.lk = 0.05 + R() * 0.06; fire(0.6 + 0.3 * R(), 0.4 + 0.7 * fk * R()); } }
+}
+/* ブレーキの赤熱: 車を作るときにホイールの内側へ光る円盤を足し、毎フレーム温度に合わせて光らせる */
+{ const mk0 = HW.makeCar;
+  if (mk0) HW.makeCar = function (id, hex, opts) {
+    const car = mk0.apply(this, arguments);
+    try { if (car && car.wheels && car.wheels.length && car.dims && opts && opts.player && !car.glow) {
+      car.glow = []; const wr = car.wr || car.dims.wr || 0.32, rf = car.rimF || 0.7, r = wr * rf * 0.92;
+      for (const w of car.wheels) { const sx = w.pivot.position.x > 0 ? 1 : -1, m = new T.Mesh(new T.CircleGeometry(r, 28), new T.MeshBasicMaterial({ color: 0xff5a14, transparent: true, opacity: 0, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide, fog: false }));
+        m.rotation.y = Math.PI / 2; m.position.set(sx * 0.07, 0, 0); m.renderOrder = 3; m.visible = false; w.pivot.add(m); car.glow.push(m); }
+    } } catch (e) { /* 光らなくても走れる */ }
+    return car; }; }
+function glowStep(game, dt) {
+  const pc = game.pc, P = game.P, c = game.spec, gl = pc && pc.glow; if (!gl || !gl.length) return;
+  const T0 = P.bT || 30, fadeT = (c && c.fadeT) || 430, t0 = Math.max(380, fadeT * 0.95), k = clamp((T0 - t0) / 520, 0, 1);      // 光り始め: 耐熱の限界（フェード温度）の手前から
+  const op = Math.pow(k, 1.1) * 0.85, yel = clamp((T0 - 800) / 300, 0, 1), night = clamp((game.world && game.world.nightK) || 0, 0, 1);
+  for (const m of gl) { m.visible = op > 0.01; if (!m.visible) continue; m.material.opacity = op * (0.6 + 0.4 * night); m.material.color.setRGB(1, 0.32 + 0.45 * yel, 0.06 + 0.18 * yel); }
+}
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ================= v30 足まわり・乗り味のリアリズム（RL.chs）=================
+   これまでの足まわり・ブレーキ・空力・LSD の部品は「グリップ ×1.05」のような倍率だけで、付けると速くなるだけだった。
+   ここでは選んだ部品を、実在の部品の物理（ばね・減衰・スタビの太さ・車高・アライメント・パッドの材質・ローター・フルード・LSD の方式・
+   ダウンフォースの前後配分・シートの保持力…）に直して、既存の物理（applyPhys の詳細セッティングの数値）に流し込み、
+   さらに数値だけでは出ない性格（旋回の限界付近のバランス・路面の荒れでの接地・底づき・ブレーキフルードの沸騰・タイヤの熱と摩耗・トルクステア・
+   運転席の揺れ）を走行の計算に足す。部品を付けていない車（純正）では、足した計算はすべて 1（何もしない）になる。
+   構成:
+     ① 部品 → 設定値の変化（R_ の規則）… applyAdv の頭で呼ばれ、詳細セッティングの「部品を付けたときの既定値」(defP) にする。ガレージのスライダーも同じ値から始まる
+     ② applyPhys の最後で、乗り心地・ロール・タイヤの熱・フルードの沸点・空力バランスなどの派生値（c.chs）を作る
+     ③ 走行の計算（axleK / physMu / tyreStep / brakeHeat / kickback / tvRate）に差し込んで、c.chs を使う
+     ④ RL.mod('chs')… ガレージの「性格」欄の文と、検査用の数値（c.rl.chs） */
+(function (g) {
+'use strict';
+const HW = g.HW; if (!HW || !HW.RL || !HW.Game || HW.RL.chsShift) return;
+const RL = HW.RL, clamp = RL.clamp, G0 = 9.80665, G = HW.Game.prototype;
+const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
+const PADF = [420, 620, 820, 1000], PAD_NM = ['ストリート', 'スポーツ', 'レーシング', 'カーボンセラミック'];
+const newS = () => ({ n: 0, kF: 1, kR: 1, zB: 0, zR: 0, drop: 0, adj: 0, adapt: 0, air: 0, act: 0, rcF: 0, rcR: 0, aF: 0, aR: 0, aDive: 0, aSquat: 0,
+  camber: 0, caster: 0, toe: 0, scrub: 0, bush: 0, stiff: 0, cage: 0, steerQ: 0, kickD: 0, trk: 0, dW: 0, dIn: 0, tP: 0, n2: 0, swD: 0,
+  pad: -1, rotor: 0, pistN: 0, pistD: 0, bias: 0, absSl: 0, absMs: 0, cool: 0, duct: 0, fluid: 0, pedal: 0, usm: 0, cal: 0,
+  lsd: null, tv: 0, fws: 0, seat: 0, harn: 0, dl: 0, dlF: 0, rhS: 0, mT: 0, mP: 0, mI: 0, dp: null });
+
+/* ---------- ① 部品 → 設定値の変化 ---------- */
+const R_ = {};
+/* スプリング: ローダウン量が大きいほどレートは高い（同じ荷重で低くするには硬くする）。直巻・レース用はさらに硬い */
+R_.spring = (o, nm, S) => {
+  const drop = Math.max(0, -num(o.cg, 0) * 1000); let kr = 1 + 0.022 * drop;
+  if (/エアサス/.test(nm)) { kr = 0.95; S.air = 1; S.adj = Math.max(S.adj, 0.7); }
+  else if (/直巻|ハイレート|Hyperco|レース用|スペック ?R|Swift|ID6/.test(nm)) kr *= 1.35;
+  const fo = /スペック ?F\b|フロント/.test(nm), ro = /スペック ?R\b|リア/.test(nm) && !fo;
+  if (!ro) S.kF *= kr; if (!fo) S.kR *= kr; S.drop += drop; };
+/* 車高調（足回りのセット）: グリップの数字から、レートの上げ幅・ローダウン量・減衰の硬さを決める */
+R_.susp = (o, nm, S) => {
+  const gp = num(o.grip, 1) - 1, kr = 1.35 + 9 * gp; S.kF *= kr; S.kR *= kr; S.drop += 18 + 250 * gp; S.zB += 6 + 80 * gp; S.zR += 12 + 150 * gp; S.adj = Math.max(S.adj, clamp(gp * 8, 0.3, 1));
+  if (/ピロ/.test(nm)) S.bush += 0.8; };
+R_.ride = (o, nm, S) => { const m = /(\d+)\s*mm/.exec(nm); S.drop += m ? +m[1] : Math.max(0, -num(o.cg, 0) * 1000); };
+R_.offroad = (o, nm, S) => { const m = /リフトアップ.*?\+(\d+)\s*mm/.exec(nm); if (m) { S.drop -= +m[1]; S.kF *= 0.92; S.kR *= 0.92; }
+  if (/エアサス車高調整/.test(nm)) { S.drop -= 20; S.air = 1; } };
+/* ダンパー: 製品の性格（コンフォート〜レース）で減衰比を上げる。電子制御は路面に合わせて変える（乗り心地の悪化が小さい） */
+R_.damper = (o, nm, S) => {
+  const gp = num(o.grip, 1) - 1; let t = gp > 0.04 ? 2 : gp > 0.025 ? 1 : 0;
+  if (/純正補修|コンフォート|Comfort|\bV1\b|\bB4\b|OEM/i.test(nm)) t = 0;
+  else if (/レース|Racing|Race|TTX|クラブスポーツ|Clubsport|DFV|3 ?ウェイ|Super Racing|Mono Racing|Hipermax R|Hipermax IV|B16|PSS10|Fox|Spec ?R|Fortune Auto 500/i.test(nm)) t = 3;
+  else if (/調整式|\bV3\b|Variant 3|Mono Sport|Hipermax Max|Sport ZERO|ZZ-R|Swift|RM タイプ|DS タイプ|ER タイプ|B8|B12|ZEAL|Aragosta|Quantum|電子制御/i.test(nm)) t = 2;
+  else if (/Street|ストリート|\bV2\b|\bB6\b|Flex Z|Hipermax S\b|BR タイプ|Showa|Tanabe|King|Fortune Auto 510/i.test(nm)) t = 1;
+  const zb = [1, 5, 9, 14][t], zr = [3, 10, 18, 28][t]; S.zB += zb; S.zR += zr; S.adj = Math.max(S.adj, [0, 0.3, 0.6, 1][t]);
+  if (/電子制御|EDFC|DSC|アダプティブ|磁性流体|MR/i.test(nm)) S.adapt = 1; };
+R_.fourws = (o, nm, S) => {
+  if (/後輪操舵|4WS/.test(nm)) S.fws = 1; if (/トルクベクタリング/.test(nm)) S.tv = Math.max(S.tv, /機械式/.test(nm) ? 1 : 0.6);
+  if (/ステア・バイ・ワイヤ/.test(nm)) { S.steerQ += 0.08; S.kickD += 0.5; }
+  if (/アクティブ・ロール/.test(nm)) { S.act = Math.max(S.act, 1); S.aF += 0.3; S.aR += 0.3; }
+  if (/アクティブ・サスペンション/.test(nm)) { S.act = Math.max(S.act, 1.5); S.adj = 1; S.adapt = 1; }
+  if (/磁性流体|MR/.test(nm)) { S.adapt = 1; S.zB += 8; S.zR += 15; } };
+/* スタビライザー: 棒の剛性の増し分（0.6 = 純正の 6 割増し）。前だけ・後だけ・前後で、ロール剛性の前後配分が変わる */
+R_.stab = (o, nm, S) => {
+  const both = /前後|セット|キット|一体|Kit/i.test(nm), fr = /フロント|Front/i.test(nm) && !both, rr = /リア|Rear/i.test(nm) && !both;
+  let m = 0.6; if (/Racing Gear|レーシング|Race/i.test(nm)) m = 1.2; else if (/調整式|ブレード/.test(nm)) m = 0.9; else if (/22mm|Whiteline|Hotchkis|H&R|Eibach|Swift|CUSCO|Mugen|Nismo|STI|Ralliart/i.test(nm)) m = 0.7;
+  if (/ピロボール/.test(nm) && !/スタビライザー|スウェイ/.test(nm)) { S.bush += 0.3; m = 0.1; }
+  if (/リアのみ/.test(nm)) { S.aR += m; } else if (fr) S.aF += m; else if (rr) S.aR += m; else { S.aF += m * 0.8; S.aR += m; }
+  if (/タワーバー/.test(nm)) S.stiff += 0.05; };
+/* ボディ補強・タワーバー・ロールケージ: ボディのねじり剛性（応答の遅れが減る）。ケージは重心が上がり、ボディが共鳴して振動が増える */
+const stiffOf = (o, nm, tab) => { for (const [re, v] of tab) if (re.test(nm)) return v; return clamp((num(o.steer, 1) - 1) * 2 + (num(o.grip, 1) - 1) * 1.5, 0.02, 0.2); };
+R_.body = (o, nm, S) => { S.stiff += stiffOf(o, nm, [[/ロールケージ/, 0.35], [/スポット増し打ち/, 0.2], [/補強バー・スポット増し/, 0.15], [/サブフレーム/, 0.12], [/ボディ補強 パーツセット|Ralliart/, 0.12], [/パワーブレース/, 0.06], [/ドームバー/, 0.07], [/パフォーマンスダンパー/, 0.05], [/フロア補強/, 0.06]]);
+  if (/パフォーマンスダンパー/.test(nm)) S.cage -= 0.08; };
+R_.strutbar = (o, nm, S) => { S.stiff += stiffOf(o, nm, [[/前後タワーバー/, 0.12], [/ラテラル|パワーブレース/, 0.08], [/ドーム/, 0.06], [/リア/, 0.03], [/フロント|Front/, 0.045]]); };
+R_.cage = (o, nm, S) => { const pt = /(\d+)\s*点/.exec(nm), n = pt ? +pt[1] : /ロールバー/.test(nm) ? 3 : 6; const full = /溶接|フルウェルド|FIA|SFI/.test(nm);
+  S.stiff += clamp(0.05 + n * 0.028 + (full ? 0.1 : 0), 0.06, 0.55); S.cage += clamp(0.2 + n * 0.05 + (full ? 0.2 : 0), 0.2, 1); };
+R_.bush = (o, nm, S) => { S.bush += /ゴム/.test(nm) ? -0.4 : /ピロ/.test(nm) ? 1 : /ポリウレタン/.test(nm) ? 0.6 : 0.5; if (/ピロボール＋調整式/.test(nm)) { S.camber -= 0.2; S.rcF += 15; S.rcR += 10; S.adj = Math.max(S.adj, 0.5); } };
+R_.alignment = (o, nm, S) => {
+  if (/高速|トーイン/.test(nm)) { S.camber += 0.5; S.caster += 0.5; S.toe += 0.15; }
+  else if (/サーキット|強ネガ/.test(nm)) { S.camber -= 1.8; S.caster += 1.5; S.toe -= 0.1; }
+  else { S.camber -= 1.0; S.caster += 1.0; } };
+R_.tread = (o, nm, S) => { const m = /車検|上限/.test(nm) ? 25 : /スペーサー/.test(nm) ? 12 : 20; S.trk += m; S.scrub += /スペーサー/.test(nm) ? 12 : 4; };
+R_.pressure = (o, nm, S) => { if (/高め/.test(nm)) S.tP += 30; else if (/低め/.test(nm)) S.tP -= 25; else if (/窒素/.test(nm)) S.n2 = 1; };
+R_.steering = (o, nm, S) => { S.steerQ += num(o.steer, 1) - 1; if (/ダンパー/.test(nm)) S.kickD += 0.65; if (/強化ブッシュ/.test(nm)) S.bush += 0.4; };
+R_.swheel = (o, nm, S) => { const m = /(\d{3})\s*mm/.exec(nm); S.swD = m ? +m[1] : 350; S.steerQ += (num(o.steer, 1) - 1) * 0.4; };
+R_.tirewidth = (o, nm, S) => { const m = /([+-]?\d+)\s*mm/.exec(nm); S.dW += m ? +m[1] : (num(o.mu, 1) - 1) * 700; S.usm += num(o.dm, 0); };
+R_.inch = (o, nm, S) => { const m = /\+(\d)〜(\d)/.exec(nm); S.dIn += /ダウン/.test(nm) ? -1 : m ? (+m[1] + +m[2]) / 2 : 1; S.usm += num(o.dm, 0); };
+R_.wheel = (o, nm, S) => { S.usm += num(o.dm, 0); };
+R_.xwhl = (o, nm, S, ck, c, M) => { if (c && c.xwheel) S.usm += c.xwheel.dm || 0; if (o.x && o.x.d && M && M.tIn) S.dIn += o.x.d - M.tIn.def; };
+/* ブレーキ: ピストン数で大径化（ローターが大きく熱容量が増える）。パッドの材質（ストリート〜レーシング〜カーボンセラミック）は温度で効きが変わる */
+const padType = (o, nm) => { const f = num(o.fade, 0);
+  if (/カーボンセラミック|Carbon ?Ceramic/i.test(nm)) return 3;
+  if (/レース|Racing|RS ?29|RSL|DTC-?[67]0|XP1[02]|CC-?X|N35S|ME20|999|N\+|FCP|W[57]\b|R タイプ|RA タイプ/i.test(nm) || f >= 240) return 2;
+  if (/スポーツ|Sport|HC\+|MX72|HP Plus|DS3000|DS2500|XP8|W3|B SPEC/i.test(nm) || f >= 60) return 1;
+  return 0; };
+R_.pad = (o, nm, S) => { S.pad = Math.max(S.pad, padType(o, nm)); S.usm += num(o.dm, 0) * 0.5; };
+R_.brake = (o, nm, S) => { const p = /(\d)\s*(?:ポット|pot)/i.exec(nm), n = p ? +p[1] : /カーボンセラミック/.test(nm) ? 6 : /大径/.test(nm) ? 4 : 0;
+  if (n) { S.pistN = Math.max(S.pistN, n); S.pistD = n >= 6 ? 38 : 42; S.rotor += (n >= 8 ? 45 : n >= 6 ? 36 : 22) + (/大径/.test(nm) ? 10 : 0); S.cal = Math.max(S.cal, n >= 6 ? 0.8 : 0.5); S.pedal += 0.3; }
+  S.pad = Math.max(S.pad, n ? Math.max(1, padType(o, nm)) : padType(o, nm)); S.usm += num(o.dm, 0); };
+R_.xcal = (o, nm, S) => { const n = o.x && o.x.pot ? o.x.pot : 0; if (n) { S.pistN = Math.max(S.pistN, n); S.pistD = n >= 6 ? 38 : 42; } S.cal = Math.max(S.cal, n >= 6 ? 0.9 : 0.6); S.pedal += 0.4; S.usm += num(o.dm, 0); };
+R_.disc = (o, nm, S) => { if (/スリット|スロット|Groove/i.test(nm)) S.cool += 0.08; if (/ドリル|Drill/i.test(nm)) S.cool += 0.1; if (/2 ?ピース|フローティング/.test(nm)) S.cool += 0.2; S.usm += num(o.dm, 0); };
+R_.xrtr = (o, nm, S) => { S.usm += num(o.dm, 0); };
+R_.brakeduct = (o, nm, S) => { S.duct += clamp(num(o.fade, 100) / 400, 0.15, 0.6); };
+/* ブレーキフルード: 吸湿後の沸点（純正の DOT3/4 は約 155℃）。ステンメッシュのラインはペダルの剛性感 */
+const fluidWet = (nm) => { let m; if ((m = /RBF ?-?(\d{3})/i.exec(nm))) return +m[1] >= 660 ? 216 : 204; if (/SRF/i.test(nm)) return 270;
+  if (/RF ?-?6[56]0|レーシング ブレーキフルード|TYP ?200|スーパーブルー|LCF 600/i.test(nm)) return 205; if (/Project μ スーパー|REACT|シリコン|高沸点/i.test(nm)) return 185; return 0; };
+R_.brakeline = (o, nm, S) => { S.fluid = Math.max(S.fluid, fluidWet(nm) ? fluidWet(nm) - 155 : 0); if (/ステン|Goodridge|Hel/i.test(nm)) S.pedal += 0.5; if (/ブースター/.test(nm)) S.pedal += 0.3; };
+R_.abs = (o, nm, S) => { if (/4 ?チャンネル/.test(nm)) { S.absSl -= 0; S.absMs -= 30; } else if (/スポーツ/.test(nm)) { S.absSl += 2; S.absMs -= 12; } else { S.bias -= 1; S.absMs -= 8; } };
+/* LSD: 方式（1WAY / 1.5WAY / 2WAY / ヘリカル / 電子制御）とイニシャルトルク・カム角。レース用は効きが強い（アンダーが出やすく、低速でバキバキ鳴る） */
+R_.lsd = (o, nm, S) => {
+  let t = 2, init = 3, acc = 66, dec = 62, kind = 'プレート式'; const w15 = /1\.5 ?WAY/i.test(nm), w1 = !w15 && /(^|[^.\d])1 ?WAY/i.test(nm), w2 = !w15 && /(^|[^.\d])2 ?WAY/i.test(nm);
+  if (/ヘリカル|ATB|Torsen|トルセン|トルクセンシング|TC-LSD|Wavetrac|スパイラル|Spiral|スーパー ?Q|T-[12]\b|ギア式/i.test(nm)) { t = 3; init = 0; acc = 66; dec = 66; kind = 'ヘリカル（ギア式）'; }
+  else if (/電子制御|ブレーキ式/.test(nm)) { t = 1; init = 0; acc = 74; dec = 74; kind = '電子制御（ブレーキ式）'; }
+  else { if (w1) { t = 1; init = 4; acc = 62; kind = '1WAY'; } else if (w15) { t = 2; init = 3; acc = 66; dec = 62; kind = '1.5WAY'; } else if (w2) { t = 3; init = 4; acc = 64; dec = 64; kind = '2WAY'; }
+    if (/カーボン|ATS|レーシング|Drexler|ハイスペック|Pro\b|プレミアム|Racing/i.test(nm)) { init += w2 ? 5 : 3; acc -= 8; dec -= 8; kind += '（競技用）'; } else if (/ツインプレート|強化クラッチ/.test(nm)) init += 1; }
+  S.lsd = { t, init, acc, dec, kind }; };
+/* 空力: 各部品のダウンフォース（dfk）と、その前後の配分（前に付けるものは前軸、ウイングは後軸）。ウイングだけだと高速でアンダーが出る */
+const AERO = { wing: [0.06, 0], frontlip: [0.95, 6], canard: [0.95, 4], floor: [0.35, 12], side: [0.5, 0], aerokit: [0.5, 8], hood: [0.8, 0], widebody: [0.5, 0], drs: [0.4, 0], trunk: [0.08, 0], bonnet: [0.8, 0] };
+const aero = (o, nm, S, ck) => { let fs = (AERO[ck] || [0.5, 0])[0]; const rh = (AERO[ck] || [0.5, 0])[1];
+  if (/ディフューザー|Diffuser/i.test(nm)) fs = /フロント|Front/i.test(nm) ? 0.95 : 0.2; if (/アンダーパネル|フラットボトム|アンダーカバー/.test(nm)) fs = 0.45;
+  if (ck === 'aerokit') { if (/GT/.test(nm)) fs = 0.4; else if (/フロント/.test(nm)) fs = 0.6; } if (ck === 'wing' && /ダックテール|スポイラー/.test(nm)) fs = 0.15;
+  const k = num(o.dfk, 0); S.dl += k; S.dlF += k * fs; if (k > 0) S.rhS += rh; };
+for (const k of ['wing', 'frontlip', 'canard', 'floor', 'side', 'aerokit', 'hood', 'widebody', 'drs', 'trunk', 'bonnet']) R_[k] = aero;
+R_.xwng = (o, nm, S) => { S.wing = 1; };      // リアウイング（実在品）: ダウンフォースは本体の空力（applyPhys の c.xwing）が後軸にかける
+R_.bseat = (o, nm, S) => { S.seat = Math.max(S.seat, /フルバケ|カーボン|FIA/.test(nm) ? 0.95 : /セミバケ/.test(nm) ? 0.6 : 0.85); };
+R_.harness = (o, nm, S) => { S.harn = Math.max(S.harn, /6 ?点|ラリー|Profi|Willans|Ultimate/.test(nm) ? 0.85 : /5 ?点/.test(nm) ? 0.7 : /4 ?点/.test(nm) ? 0.5 : 0.15); };
+/* 質量が付いている場所（その重さの何割が前軸にかかるか）。外したり足したりして、前後配分と慣性（端の重さほど効く）を動かす */
+const MASS_P = { weight: 0.5, cabin: 0.5, panel: 0.75, glass: 0.5, battery: 0.65, comfort: 0.5, spare: 0.08, bolts: 0.5, roof: 0.5, bseat: 0.5, harness: 0.5, cage: 0.5, hood: 0.95, bonnet: 0.95, trunk: 0.08,
+  wing: 0.06, frontlip: 0.97, canard: 0.95, floor: 0.4, side: 0.5, aerokit: 0.5, widebody: 0.5, mirror: 0.6, guard: 0.7, offroad: 0.6, fourws: 0.4, drs: 0.2 };
+/* タイヤの種類 → サイドウォールの硬さ（硬いほど応答は鋭いが、突き上げと振動は増える） */
+const TY_SW = { slick: 1, semi: 0.85, hyper: 0.7, uhp: 0.7, sport: 0.55, sum: 0.3, eco: 0.15, stud: -0.1, snow: -0.1, studless: -0.1, tbr: 0.9 };
+const DRV_CK = { xdif: 1, diffcool: 1, shaft: 1, xaxl: 1, tcs: 1 };      // デフ・ドライブシャフト・アクスル: 駆動輪の側にある重さ
+const massItem = (o, nm, S, ck, drv) => { const dm = num(o.dm, 0); if (!dm) return; let p = DRV_CK[ck] ? (drv === 'FF' ? 0.85 : drv === 'MR' ? 0.35 : drv === '4WD' ? 0.5 : 0.2) : MASS_P[ck];
+  if (/ボンネット|フード|Hood|フロント|バンパー|ラジエーター|フェンダー/.test(nm) && !/リア/.test(nm)) p = Math.max(p, 0.92); else if (/トランク|リア|テール|ハッチ|Trunk|スペア/.test(nm)) p = Math.min(p, 0.12);
+  S.mT += dm; S.mP += dm * p; S.mI += dm * (p - 0.5) * (p - 0.5); };
+
+/* 選ばれた部品から S を作り、詳細セッティングの「部品を付けたときの既定値」(s.defP) にする。純正の車（足まわりの部品なし）は何もしない */
+RL.chsShift = function (sc, c, base, base0, tune, sel, cats, mods) {
+  const S = newS(), M = {}; for (const s of sc.list) M[s.key] = s;
+  for (let i = 0; i < sel.length; i++) { const o = sel[i], ck = cats[i].key; if (!o || o.id === 0 || o === cats[i].list[0]) continue;
+    const f = R_[ck], nm = o.name || ''; let hit = false;
+    if (f) { f(o, nm, S, ck, c, M); hit = true; }
+    if ((MASS_P[ck] !== undefined || DRV_CK[ck]) && num(o.dm, 0)) { massItem(o, nm, S, ck, c.drive); hit = true; }
+    if (hit) S.n++; }
+  if (c.tyre && !c.tyre.stk) { S.tyr = TY_SW[c.tyre.cls] !== undefined ? TY_SW[c.tyre.cls] : 0.4; S.n++; }
+  c.chsS = S; S.cgPre = c.cgH; if (!S.n) return;
+  const dp = S.dp = {}, d = (k) => (M[k] ? M[k].def : 0), set = (k, v) => { const s = M[k]; if (!s) return; v = clamp(v, s.min, s.max); if (Math.abs(v - s.def) > 1e-9) { s.defP = v; dp[k] = v; } };
+  const bs = 1 + 0.5 * Math.pow(Math.max(0, S.drop) / 60, 2);      // 低くしすぎるとバンプストップが当たり、実質のレートが上がる
+  set('kF', d('kF') * S.kF * bs); set('kR', d('kR') * S.kR * bs); set('zB', d('zB') + S.zB); set('zR', d('zR') + S.zR);
+  set('rcF', d('rcF') - 0.55 * S.drop + S.rcF); set('rcR', d('rcR') - 0.8 * S.drop + S.rcR);
+  { const r0 = d('rsd') / 100, Rf = r0 * (1 + 0.375 * S.aF), Rr = (1 - r0) * (1 + 0.375 * S.aR); if (S.aF || S.aR) set('rsd', 100 * Rf / (Rf + Rr)); }
+  if (S.aDive) set('aDive', d('aDive') + S.aDive); set('camber', d('camber') + S.camber); set('caster', d('caster') + S.caster); if (S.scrub) set('scrub', d('scrub') + S.scrub);
+  if (S.dW || S.dIn) { const OD = d('tIn') * 25.4 + 2 * d('tW') * d('tA') / 100, tW = clamp(d('tW') + S.dW, 135, 355), tI = clamp(d('tIn') + S.dIn, 13, 24); set('tW', tW); set('tIn', tI); set('tA', (OD - tI * 25.4) * 100 / (2 * tW)); }
+  if (S.tP) set('tP', d('tP') + S.tP); if (S.trk) { set('trF', d('trF') + S.trk); set('trR', d('trR') + S.trk); }
+  if (S.pad >= 0) { set('pad', S.pad); const drum = !!M.bT && (((tune.adv && tune.adv.bT !== undefined) ? tune.adv.bT : M.bT.def) | 0) !== 2;      // トラックのドラムブレーキはパッドの材質の耐熱を使わない
+    if (mods && !drum && !(tune.adv && tune.adv.pad !== undefined)) mods.fade = (mods.fade || 0) - (PADF[S.pad] - 420); }      // パッドの材質に含まれている耐熱のぶんは、部品の fade から引く（二重に数えない）
+  if (S.rotor) set('rotor', d('rotor') + S.rotor); if (S.pistN) { set('pistN', S.pistN); if (S.pistD) set('pistD', S.pistD); }
+  if (S.bias) set('bias', d('bias') + S.bias); if (S.absSl) set('absSl', d('absSl') + S.absSl); if (S.absMs) set('absMs', d('absMs') + S.absMs);
+  if (S.lsd) { set('lsd', S.lsd.t); set('lsdInit', S.lsd.init); set('lsdAcc', S.lsd.acc); set('lsdDec', S.lsd.dec); }
+  if (S.mT || S.mI) { const M0 = (base0.curb || 1300) + 75, wf0 = d('wf') / 100; set('wf', d('wf') + 100 * (S.mP - wf0 * S.mT) / M0);
+    const wb = base0.wb || 2.6, Iz0 = M0 * ((base0.L || 4.4) * (base0.L || 4.4) + (base0.W || 1.75) * (base0.W || 1.75)) / 12; set('iK', 100 + 100 * S.mI * wb * wb / Iz0); } };
+
+/* 部品の倍率のうち、上のスライダーで表せたぶんは掛けない（二重に数えない） */
+RL.chsRes = function (o, ck, k) {
+  if (ck === 'alignment' && k === 'grip') return num(o.grip, 1) || 1;      // キャンバーの定義（latK）が持っている
+  if (ck === 'lsd' && k === 'df') return Math.sqrt(num(o.df, 1)) || 1;      // LSD のロック率（la）が駆動力の増しを持つので、残りは半分
+  return 1; };
+
+/* ---------- ② applyPhys の最後: 派生値 ---------- */
+const tsOf = (c) => { const dr = c.drive, k = dr === 'FF' ? 1 : dr === '4WD' ? 0.12 : 0; if (!k) return 0; const la = c.adv && c.adv.lsd ? c.adv.lsd.la : 0; return 0.5 * k * (1 + 1.1 * la); };      // トルクステア: 左右で長さの違うドライブシャフト・LSD の片効き
+RL.chsPhys = function (c, V, Dd, ph, info, d) {
+  const S = c.chsS, ts = tsOf(c); if (!S || !S.n) { c.chs = { stock: true, ts, lean: 0.0012, headK: 1, vibV: 1, fluidWet: ph.drum ? 0 : 155 }; return; }
+  const ch = c.chs = { stock: false, ts, shift: S.dp || {}, lean: 0.0012 * (1 - clamp(0.6 * S.seat + 0.4 * S.harn, 0, 0.9)), headK: 1 - 0.55 * clamp(0.6 * S.seat + 0.4 * S.harn, 0, 0.9) };
+  const wf = clamp(ph.wf || 0.53, 0.3, 0.7), bush = clamp(S.bush, -0.4, 1.2), barAvg = (S.aF + S.aR) / 2;
+  // 空力: 部品のダウンフォースの前後配分。いまの計算は両軸に同じ倍率なので、配分の偏りぶんだけ前後の軸の限界をずらす
+  { const dl = S.dl * (ph.rhoK || 1), fs = S.dl > 0 ? S.dlF / S.dl : wf; ch.aeF = 0.45 * dl * (fs / wf - 1); ch.aeR = 0.45 * dl * ((1 - fs) / (1 - wf) - 1); ch.fsw = fs; ch.dl = dl; }      // 単位: 1/(m/s)²（速度の 2 乗を掛けて使う）
+  if (S.rhS) ph.rhS = clamp((ph.rhS || 0.2) + S.rhS / 100, 0, 1);
+  ch.fws = S.fws; ch.tv = S.tv;
+  // 乗り心地・路面からの突き上げ: ばねの振動数・減衰の合い具合・タイヤの偏平率と空気圧・ばね下の重さ・ブッシュの硬さ・ボディの剛性
+  const f0 = ph.fRide0 || ph.fRide || 1.4, f1 = ph.fRide || f0, z0 = ph.zeta0 !== undefined ? ph.zeta0 : ph.zeta, z1 = ph.zeta !== undefined ? ph.zeta : z0;
+  const sw = Math.pow(Dd.tA / V.tA, 0.5), prK = Math.pow(V.tP / Dd.tP, 0.6), usm = clamp(S.usm / 90, -0.4, 0.9), mis = Math.abs(z1 - 0.35) - Math.abs(z0 - 0.35);
+  ch.bmp = clamp(Math.pow(f1 / f0, 1.1) * (1 + 2.2 * mis) * sw * prK * (1 + 0.55 * usm) * (1 + 0.25 * bush) * (1 + 0.5 * S.stiff) * (1 + 0.18 * barAvg) * (S.adapt ? 0.78 : 1) / (1 + 0.5 * Math.max(0, -S.drop) / 100), 0.45, 3.6);
+  ch.vib = clamp(Math.pow(sw, 1.2) * Math.pow(prK, 0.8) * (1 + 0.45 * Math.max(0, bush)) * (1 + 0.8 * Math.max(0, S.cage)) * (1 + 0.6 * usm) * (1 + 0.3 * S.stiff) * (1 + 0.3 * Math.min(0, bush)), 0.4, 3.2); ch.vibV = ch.vib;
+  if (S.tyr) { ch.bmp = clamp(ch.bmp * (1 + 0.12 * S.tyr), 0.45, 3.6); ch.vib = clamp(ch.vib * (1 + 0.18 * S.tyr), 0.4, 3.2); ch.vibV = ch.vib; c.adv.stab *= 1 - 0.05 * S.tyr; }      // タイヤの硬さ
+  ch.trav = clamp(1 - S.drop / 150, 0.35, 1.3); ch.roadK = clamp(Math.pow(ch.bmp, 0.5), 0.6, 2); ch.vibK = ch.vib;
+  // ロール・ピッチ（見た目と、車体の動きの量）: ロール剛性（ばね × トレッド² ＋ スタビ）に対する、重心とロールセンターの高さの差
+  { const t1 = V.trF / 1000, t2 = V.trR / 1000, K1 = (V.kF * t1 * t1 + V.kR * t2 * t2) * (1 + 0.234 * barAvg) * (1 + 0.8 * S.act), K0 = Dd.kF * (Dd.trF / 1000) * (Dd.trF / 1000) + Dd.kR * (Dd.trR / 1000) * (Dd.trR / 1000);
+    const dcg = (S.cgPre !== undefined && c.cgH0 !== undefined) ? S.cgPre - c.cgH0 : 0, L1 = c.mass * Math.max(0.05, c.cgH - (V.rcF + V.rcR) / 2000), L0 = c.mass * Math.max(0.05, c.cgH - dcg - (Dd.rcF + Dd.rcR) / 2000);      // dcg: 部品（ばね・車高）で下がった重心
+    ch.rollV = clamp((L1 / K1) / (L0 / K0), 0.3, 2.4); ch.pitchV = clamp(Math.pow((Dd.kF + Dd.kR) / (V.kF + V.kR), 0.8) * (1 - 0.5 * (V.aDive - Dd.aDive) / 100), 0.4, 1.9); }
+  // ステアリング: スクラブ・ブッシュ・クイックなレシオ・ステアリングダンパーでキックバックが変わる。ローダウンはバンプステア
+  ch.kickAdd = 0.0016 * Math.max(0, S.drop - 20) / 10 * (1 - 0.5 * Math.max(0, S.adj)); ch.kickK = clamp((1 + 0.35 * bush) * (1 - 0.6 * clamp(S.kickD, 0, 1)) * (1 + 0.5 * clamp(S.steerQ, -0.2, 0.5)), 0.2, 2.5);
+  ch.ts = ts * clamp(1 - 0.35 * bush - 0.4 * clamp(S.kickD, 0, 1), 0.2, 1.4);
+  c.adv.stab *= clamp((1 - 0.1 * S.stiff) * (1 - 0.05 * bush) * (1 - 0.04 * barAvg) * (1 + 0.25 * S.air), 0.7, 1.3);      // ボディの剛性・ブッシュ・スタビで、向きを変えたときの応答の遅れが変わる
+  // タイヤの熱・摩耗: 空気圧の過不足・トー・キャンバーのつけすぎ。窒素は温度による圧力の変化が小さい
+  { const pr = V.tP / Dd.tP, cam = V.camber;
+    ch.tyHeat = clamp(1 + 0.9 * Math.max(0, 1 - pr) - 0.1 * Math.max(0, pr - 1) + 0.9 * Math.abs(S.toe) + 0.045 * Math.max(0, -cam - 2.2) - 0.03 * S.n2, 0.6, 2.2);
+    ch.tyWear = clamp(1 + 0.9 * Math.max(0, 1 - pr) + 0.35 * Math.max(0, pr - 1.12) + 1.6 * Math.abs(S.toe) + 0.22 * Math.pow(Math.max(0, -cam - 1.4), 1.3) - 0.04 * S.n2 + 0.004 * Math.max(0, S.dW), 0.6, 3); }
+  // ブレーキ: 冷却（スリット・ダクト）、フルードの沸点、キャリパー
+  if (!ph.drum) { ph.bCool = (ph.bCool || 1) * (1 + S.cool + S.duct); ch.fluidWet = 155 + S.fluid; } else ch.fluidWet = 0;
+  ch.pad = V.pad | 0; ch.padMu = ph.pad ? ph.pad[0] : 0.38; ch.bite = ph.pad ? ph.pad[1] : 40; ch.padCold = ph.pad ? ph.pad[3] : 0.04; ch.cool = (ph.bCool || 1); ch.cal = S.cal; ch.pedal = S.pedal;
+  ch.usm = S.usm; ch.stiffB = S.stiff; ch.bush = S.bush; ch.cage = S.cage; ch.seat = S.seat; ch.harn = S.harn; ch.steerQ = S.steerQ; ch.kickD = S.kickD; ch.drop = S.drop; ch.adapt = S.adapt; ch.adj = S.adj; ch.act = S.act; ch.air = S.air; ch.swD = S.swD; ch.n2 = S.n2; ch.toe = S.toe; ch.aFb = S.aF; ch.aRb = S.aR; ch.tyr = S.tyr || 0; ch.lsdKind = S.lsd ? S.lsd.kind : ''; };
+
+/* ---------- ③ 走行の計算への差し込み ---------- */
+const safe = (fn, dflt) => { try { return fn(); } catch (e) { if (g.console && !RL._chsW) { RL._chsW = 1; console.warn('RL.chs: ' + (e && e.stack || e)); } return dflt; } };
+const say = (game, key, sec, msg, bad) => { const P = game.P, q = P.chsT || (P.chsT = {}); if ((q[key] || 0) > P.time) return; q[key] = P.time + sec; if (game.toast) game.toast(msg, bad); };
+const ss = RL.ss, BG = 3;
+/* 前後の横グリップ: 前後の差（ばね・スタビ・ロールセンターによる荷重移動の差）は横加速度が大きいほど大きく出る。ウイングなどの空力の前後配分は速度の 2 乗で効く */
+{ const ax0 = G.axleK;
+  G.axleK = function (brake) {
+    const r = ax0.call(this, brake), c = this.spec, ch = c.chs; if (!ch || ch.stock || !c.phys) return r;
+    return safe(() => { const P = this.P, ph = c.phys, v2 = P.v * P.v, ay = Math.abs(P.aLat || 0) / (0.8 * G0), s = clamp(0.3 + 0.7 * ay, 0.3, 1.6);
+      if (ph.fK > 0 && ph.rK > 0) { r.f *= Math.pow(ph.fK, BG * s - 1); r.r *= Math.pow(ph.rK, BG * s - 1); }      // 純正の比を 1 としたときの前後の差を BG 倍に（この計算の荷重移動は小さめに出るため）。純正では ph.fK = ph.rK = 1 で何もしない
+      if (ch.aeF || ch.aeR) { r.f *= 1 + clamp(ch.aeF * v2, -0.3, 0.3); r.r *= 1 + clamp(ch.aeR * v2, -0.3, 0.3); }
+      if (ch.fws) r.r *= 1 + 0.05 * ch.fws * ss(18, 40, P.v);      // 4WS: 高速では後輪が同じ向きに切れて、後ろが安定する
+      return r; }, r); }; }
+/* 路面の凹凸での接地: 荒れた路面（フリー走行・未舗装）ほど、硬い足まわり・重いばね下・低い扁平率で接地が抜ける。低すぎる車高は底づきする */
+{ const mu0 = G.physMu;
+  G.physMu = function (dt) {
+    const k0 = mu0.call(this, dt), c = this.spec, ch = c.chs; if (!ch || ch.stock || !c.phys) return k0;
+    return safe(() => { const P = this.P, ph = c.phys; if (P.v < 3) return k0; let k = k0;
+      P.chsB = (P.chsB || 0) + dt * P.v / 1.7;
+      const free = this.path && this.path.free, rg = free ? ((P.offT || 0) > 0.3 ? 4 : 1.6) : this.path && this.path.circuit ? 1.2 : 1, n = Math.sin(P.chsB * 2.1) * Math.sin(P.chsB * 0.73 + 1), pos = Math.max(0, n);
+      k = Math.min(k * (1 - pos * Math.max(ph.bump || 0, 0.003) * 4 * rg * (ch.bmp - 1)), Math.max(1, k0));
+      if (ch.trav < 0.97) {      // 底づき: 路面の凹凸が動きしろを超えると、バンプストップに当たって一瞬グリップが抜け、車体が突き上げられる（荒れた路面・低い車高ほど）
+        const amp = clamp(Math.max(ph.bump || 0, 0.006) / 0.008, 0.3, 3) * rg, lim = 0.5 + 2.2 * Math.max(0, ch.trav - 0.4), st = clamp((1 - ch.trav) * (0.4 + 1.2 * P.v / 40) * Math.min(2, amp * 1.6), 0, 1);
+        if (pos * amp > lim && !P.btmOn) { P.btmOn = true; P.btmT = P.time + 0.25; P.btmK = 0.07 * st; P.bottom = st; this.shake = Math.max(this.shake || 0, 0.35 * st); if (st > 0.25) say(this, 'btm', 45, '車高が低すぎて底づき ― サスペンションの動きしろが足りません（車高を上げるか、ばねを見直す）', true); }
+        else if (pos * amp < lim * 0.7) P.btmOn = false;
+        if ((P.btmT || 0) > P.time) k *= 1 - (P.btmK || 0); else P.bottom = 0; }
+      return k; }, k0); }; }
+/* タイヤの熱と摩耗: 空気圧・トー・キャンバーで増える（元の計算にあとから足す） */
+{ const ty0 = G.tyreStep;
+  G.tyreStep = function (dt) {
+    const k = ty0.call(this, dt), c = this.spec, ch = c.chs, y = c.tyre; if (!ch || ch.stock || !y) return k;
+    return safe(() => { const P = this.P, ph = c.phys || {}, v = Math.max(0, P.v || 0), work = Math.abs(P.aLat || 0) + Math.abs(P.aLong || 0) * 1.2 + (P.skid || 0) * 6 + 0.25, ld = ph.tyLoad || 1;
+      P.tyT += work * ld * v * 0.012 * (y.cls === 'slick' ? 1.25 : 1) * (ch.tyHeat - 1) * dt;
+      P.tyW = Math.min(1.2, P.tyW + dt * y.wear * work * ld * ld * v * 2.2e-6 * (1 + Math.max(0, P.tyX || 0)) * (ch.tyWear - 1));
+      return k; }, k); }; }
+/* ブレーキフルード: 熱いブレーキでフルードが沸騰すると、ペダルが奥まで沈んで効かなくなる（ベーパーロック）。パッドが熱に耐えても、フルードが先に音を上げることがある */
+{ const bh0 = G.brakeHeat;
+  G.brakeHeat = function (brake, dt) {
+    const k0 = bh0.call(this, brake, dt), c = this.spec, ch = c.chs; if (!ch || !ch.fluidWet) return k0;
+    return safe(() => { const P = this.P; if (P.bfT === undefined) P.bfT = 25; if (P.bfV === undefined) P.bfV = 0;
+      P.bfT += (25 + 0.16 * (P.bT - 30) - P.bfT) * Math.min(1, dt / 60);      // フルードの温度は、ローターの温度にゆっくり追いつく（純正のフルードは、パッドの熱ダレが終わる 800℃ ごろに沸く）
+      const tgt = clamp((P.bfT - (ch.fluidWet - 10)) / 14, 0, 1); P.bfV += (tgt - P.bfV) * Math.min(1, dt * (tgt > P.bfV ? 1.2 : 0.12));
+      if (P.bfV > 0.25) say(this, 'vap', 40, 'ブレーキフルードが沸騰（ベーパーロック）― ペダルが奥まで沈みます。沸点の高いフルードに換えてください（' + Math.round(P.bfT) + '℃・沸点 ' + ch.fluidWet + '℃）', true);
+      return k0 * (1 - 0.7 * P.bfV); }, k0); }; }
+/* キックバック: スクラブ・ブッシュ・ステアリングダンパー・バンプステアで変わる。トルクステア（前輪駆動の大パワー）は車種と出力から（部品に関係なく） */
+{ const kb0 = G.kickback;
+  G.kickback = function (dt, brake, rough) {
+    const c = this.spec, ch = c.chs, a = c.adv; if (!ch || !a) return kb0.call(this, dt, brake, rough);
+    if (!ch.stock && (ch.kickK !== 1 || ch.kickAdd)) { const k0 = a.kick; a.kick = ((k0 || 0) + ch.kickAdd) * ch.kickK; try { kb0.call(this, dt, brake, rough); } finally { a.kick = k0; } } else kb0.call(this, dt, brake, rough);
+    if (ch.ts > 0) safe(() => { const P = this.P, acc = Math.max(0, P.aLong || 0); if (acc > 3.5 && P.v > 2 && P.v < 50 && (P.thr || 0) > 0.5) P.sc = clamp((P.sc || 0) + ch.ts * clamp((acc - 3.5) / 3, 0, 1.5) * ss(2, 6, P.v) * clamp((50 - P.v) / 30, 0, 1) * dt, -1, 1); });
+  }; }
+/* トルクベクタリング: 駆動力を左右に配って、加速しながら曲がるときの頭の入りを助ける */
+{ const tv0 = G.tvRate;
+  G.tvRate = function () {
+    let r = tv0.call(this); const c = this.spec, ch = c.chs; if (!ch || ch.stock || !ch.tv) return r;
+    return r + safe(() => { const P = this.P; return ch.tv * 0.07 * (P.v * Math.tan(P.delta || 0) / (c.wb || 2.6)) * clamp(P.thr || 0, 0, 1) * ss(6, 22, P.v); }, 0); }; }
+/* 運転席の揺れ（車載カメラ）: 純正のシートとベルトでは、横 G で体が外へ傾く。バケットシートとハーネスで保持される */
+RL.chsHead = function (game, cam, R) {
+  const ch = game.spec && game.spec.chs, P = game.P || {};
+  if (!ch) { cam.position.y += R.hy + R.vib; cam.rotation.x += R.hp; cam.rotation.z += R.hr; return; }
+  cam.position.y += R.hy * ch.headK + R.vib; cam.rotation.x += R.hp * ch.headK; cam.rotation.z += R.hr * ch.headK + ch.lean * clamp(P.aLat || 0, -12, 12); };
+/* 乗り心地のうち「見える」ぶん（ロール・ピッチ・路面の入力）を、rideStep が読む */
+RL.chsRide = (c) => { const ch = c && c.chs; return ch && !ch.stock ? ch : null; };
+
+/* ---------- ④ ガレージの「性格」欄と検査用の数値 ---------- */
+RL.mod('chs', (ctx, out) => {
+  const c = ctx.c, ch = c.chs || { stock: true, ts: 0 }, ph = c.phys || {}, y = c.tyre, tyOn = !!(y && !y.stk), wgOn = !!c.xwing, bkOn = !!c.xbrk;
+  const q = (v, n) => +(+v).toFixed(n === undefined ? 3 : n), pct = (v) => (v >= 0 ? '+' : '') + Math.round(v * 100) + '%', rows = [], lsd = c.adv && c.adv.lsd ? c.adv.lsd : null;
+  // 純正の足まわり（部品なし）でも、タイヤ・実在のウイング・ローターを付けていれば性格を出す
+  const o = { stock: !!ch.stock && !tyOn && !wgOn && !bkOn, ts: q(ch.ts || 0), massKg: Math.round(c.mass), cgMm: Math.round((c.cgH || 0) * 1000), gripK: q(c.grip, 2), muK: q(c.mu, 3), brakeN: q(c.brake, 2), fadeT: Math.round(c.fadeT || 0), cdA: q(c.cda, 3), crr: q(c.crr || 0, 4), steerK: q(c.steerK || 1, 3), stab: q(c.adv ? c.adv.stab : 1), driveFrac: q(c.driveFrac || 0, 3) };
+  if (ph.wf) o.wf = q(ph.wf * 100, 2);
+  if (tyOn) Object.assign(o, { tyTopt: y.Topt, tyTw: y.Tw, tyWearR: q(y.wear, 2), tyWet: q(y.wet || 1, 2), tyTread: y.tread, tyVmax: y.vmax, tyLs: q(y.ls || 0, 3) });
+  if (wgOn) Object.assign(o, { wingCLS: q(c.xwing.CLS, 3), wingCdA: q(c.xwing.cdA, 4) });
+  if (bkOn) Object.assign(o, { rtrCap: q(c.xbrk.cap, 2), rtrCool: q(c.xbrk.cool, 2), rtrKind: c.xbrk.kind || 0 });
+  if (!ch.stock) {
+    const bal = Math.log(((ph.fK || 1) * (1 + (ch.aeF || 0) * 3086 * 0.9)) / ((ph.rK || 1) * (1 + (ch.aeR || 0) * 3086 * 0.9))), sh = ch.shift || {}, has = (...ks) => ks.some((k) => sh[k] !== undefined);
+    Object.assign(o, { bal: q(bal * 100, 2), aeF: q((ch.aeF || 0) * 3086, 4), aeR: q((ch.aeR || 0) * 3086, 4), bmp: q(ch.bmp), vib: q(ch.vib), trav: q(ch.trav), roadK: q(ch.roadK),
+      rollV: q(ch.rollV), pitchV: q(ch.pitchV), tyHeat: q(ch.tyHeat), tyWear: q(ch.tyWear), kickK: q(ch.kickK), kickAdd: q(ch.kickAdd, 4), headK: q(ch.headK), lean: q(ch.lean, 5), tv: ch.tv, fws: ch.fws, fluidWet: ch.fluidWet,
+      pad: ch.pad, padMu: q(ch.padMu), bite: ch.bite, padCold: q(ch.padCold), cool: q(ch.cool), cal: q(ch.cal), pedal: q(ch.pedal), usm: q(ch.usm, 1), stiff: q(ch.stiffB), bushK: q(ch.bush), cageK: q(ch.cage), seat: q(ch.seat), harn: q(ch.harn), steerQ: q(ch.steerQ), kickD: q(ch.kickD),
+      drop: q(ch.drop, 1), adapt: ch.adapt, adj: q(ch.adj), act: q(ch.act), air: ch.air, toe: q(ch.toe), swD: ch.swD, n2: ch.n2, bars: q(ch.aFb + ch.aRb), fRide: q(ph.fRide || 0, 3), zeta: q(ph.zeta || 0, 3), fK: q(ph.fK || 1), rK: q(ph.rK || 1), shift: sh,
+      lsdT: lsd ? lsd.t : 0, tyr: q(ch.tyr || 0), lsdLa: lsd ? q(lsd.la) : 0, lsdLd: lsd ? q(lsd.ld) : 0, lsdChat: lsd ? q(lsd.chat) : 0 });
+    if (has('rsd', 'kF', 'kR', 'rcF', 'rcR') || ch.aeF || ch.aeR || ch.fws || ch.tv || Math.abs(bal) > 0.01) rows.push({ label: '旋回バランス', txt: Math.abs(bal) < 0.015 ? 'ニュートラル' : bal < 0 ? 'アンダー寄り（前軸が先に滑る・限界付近 ' + pct(bal) + '）' : 'オーバー寄り（後軸が先に滑る・限界付近 +' + Math.round(bal * 100) + '%）' + (bal > 0.04 ? ' ― 急なアクセルオフで巻く' : ''), good: Math.abs(bal) < 0.03 ? 1 : bal < -0.06 || bal > 0.05 ? -1 : 0 });
+    if (has('kF', 'kR', 'zB', 'zR', 'rcF', 'rcR', 'tA', 'tP', 'tIn') || ch.drop || ch.usm || ch.stiffB || ch.cageK || ch.bush) rows.push({ label: '乗り心地・路面', txt: (ch.bmp > 1.5 ? 'かなり硬い' : ch.bmp > 1.15 ? '硬め' : ch.bmp < 0.9 ? 'しなやか' : '純正並み') + '（突き上げ ×' + ch.bmp.toFixed(2) + '・振動 ×' + ch.vib.toFixed(2) + '・ばね上 ' + (ph.fRide || 0).toFixed(2) + 'Hz）' + (ch.trav < 0.8 ? ' ― 低すぎて荒れた路面で底づき' : '') + (ch.adapt ? ' ― 路面に合わせて減衰を変える' : ''), good: ch.bmp > 1.5 || ch.trav < 0.8 ? -1 : ch.bmp < 0.95 ? 1 : 0 });
+    if (ch.steerQ || ch.kickD || ch.bush || ch.stiffB || has('caster', 'scrub', 'camber') || ch.swD) rows.push({ label: 'ステアリング', txt: '応答の遅れ ×' + (c.adv ? c.adv.stab : 1).toFixed(2) + '・キックバック ×' + ch.kickK.toFixed(2) + (ch.kickAdd > 0.002 ? '（ローダウンでバンプステア）' : '') + (ch.steerQ > 0.1 ? '・クイック（高速でふらつきやすい）' : ch.steerQ < -0.05 ? '・安定重視' : ''), good: ch.kickK > 1.5 ? -1 : (c.adv && c.adv.stab < 0.95) || ch.kickK < 0.7 ? 1 : 0 });
+    if (has('pad', 'rotor', 'pistN', 'bias', 'absSl', 'absMs') || ch.fluidWet > 155 || ch.cool > 1.02) rows.push({ label: 'ブレーキ', txt: PAD_NM[ch.pad] + 'パッド（効き始め ' + ch.bite + '℃' + (ch.padCold > 0.1 ? '・冷間は ' + Math.round(ch.padCold * 100) + '% 弱い' : '') + '）・耐熱 ' + Math.round(c.fadeT || 0) + '℃・フルード沸点 ' + (ch.fluidWet || '-') + '℃' + (ch.cool > 1.1 ? '・冷却 ×' + ch.cool.toFixed(2) : '') + (ch.fluidWet > 155 ? '' : ph.pad && ph.pad[2] > 700 ? ' ― 純正フルードだと先に沸騰' : ''), good: ch.padCold > 0.2 || (ph.pad && ph.pad[2] > 700 && ch.fluidWet <= 155) ? -1 : ch.fluidWet > 155 || ch.cool > 1.2 ? 1 : 0 });
+    if (lsd && lsd.t) rows.push({ label: 'LSD・駆動', txt: (ch.lsdKind || ['', '1WAY', '1.5WAY', '2WAY'][lsd.t]) + '（加速側のロック ' + Math.round(lsd.la * 100) + '%・減速側 ' + Math.round(lsd.ld * 100) + '%）' + (lsd.la > 0.5 ? ' ― 立ち上がりで外へ膨らむ（アンダー）' : '') + (lsd.chat > 0.05 ? '・低速で切るとバキバキ鳴る' : '') + (lsd.ld > 0.3 ? '・アクセルオフでも姿勢が安定' : '・アクセルオフで前が入りやすい'), good: lsd.la > 0.6 ? -1 : lsd.la > 0.25 ? 1 : 0 });
+    if (ch.dl) rows.push({ label: '空力', txt: '前軸への配分 ' + Math.round(ch.fsw * 100) + '%（ダウンフォース 200km/h で +' + Math.round(ch.dl * 3086 * 100) + '% 車重）' + (ch.fsw < 0.3 ? ' ― 高速でアンダー（フロントの押さえが足りない）' : ch.fsw > 0.75 ? ' ― 高速で後ろが軽くなる' : ' ― 前後バランス良好'), good: ch.fsw < 0.3 || ch.fsw > 0.75 ? -1 : 1 });
+    if (ch.tyHeat > 1.08 || ch.tyWear > 1.1 || ch.tyHeat < 0.95) rows.push({ label: 'タイヤの熱・摩耗', txt: '発熱 ×' + ch.tyHeat.toFixed(2) + '・摩耗 ×' + ch.tyWear.toFixed(2) + (ch.tyWear > 1.3 ? '（トー・キャンバー・空気圧が偏りすぎ）' : ''), good: ch.tyWear > 1.3 ? -1 : ch.tyWear < 0.95 ? 1 : 0 });
+    if (ch.seat || ch.harn || has('iK', 'wf')) rows.push({ label: '重量配分・慣性', txt: '前軸 ' + ((ph.wf || 0) * 100).toFixed(1) + '%・慣性 ' + (sh.iK !== undefined ? Math.round(sh.iK) + '%' : '純正') + (ch.seat || ch.harn ? '・体の保持 ' + Math.round(clamp(0.6 * ch.seat + 0.4 * ch.harn, 0, 1) * 100) + '%（車載視点の揺れが減る）' : ''), good: ch.seat > 0.5 ? 1 : 0 });
+  }
+  if (tyOn && rows.length < 8) rows.push({ label: 'タイヤ', txt: (y.nm || '') + '（' + ({ slick: 'スリック', semi: 'セミスリック', sport: 'スポーツ', uhp: '超高性能', sum: '夏', eco: '低燃費', stud: 'スタッドレス', snow: 'スノー', studless: 'スタッドレス', tbr: 'トラック', hyper: 'ハイパー' }[y.cls] || y.cls || '') + '）最適 ' + y.Topt + '℃±' + y.Tw + '・摩耗 ×' + (y.wear || 1).toFixed(1) + '・ウェット ×' + (y.wet || 1).toFixed(2) + (y.Topt >= 55 ? ' ― 暖まるまで滑りやすい' : '') + ((y.wet || 1) < 0.7 ? '・雨に弱い' : ''), good: (y.wet || 1) < 0.7 || y.Topt >= 70 ? -1 : 0 });
+  if (wgOn && !ch.dl && rows.length < 8) rows.push({ label: '空力', txt: 'リアウイング（後軸にダウンフォース ' + Math.round(0.5 * 1.2 * c.xwing.CLS * 55.6 * 55.6 / G0) + ' kgf @200km/h・CdA +' + c.xwing.cdA.toFixed(3) + '）― 高速でフロントが浮きやすく、前の押さえと合わせる', good: 0 });
+  if (bkOn && rows.length < 8) rows.push({ label: 'ローター', txt: '熱容量 ×' + c.xbrk.cap.toFixed(2) + '・冷却 ×' + c.xbrk.cool.toFixed(2) + (c.xbrk.cold ? '（カーボンセラミック: 冷間でも効きが落ちにくい）' : ''), good: c.xbrk.cap > 1.1 ? 1 : 0 });
+  o.card = rows.slice(0, 8); out.chs = o; });
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ================= v30 リアリズム層 ① エンジンの性格・熱・扱いやすさ（担当: eng）=================
+   部品を付けると「速くなる」だけでなく、実在の物理どおりに“性格”が変わるようにする。
+   ・トルクの出方: 吸排気・ヘッダー・スロットルは「出力の上乗せ分」を回転域のどこに割り振るか（高回転寄り／低速寄り）が違う。
+     出力の合計（最高出力）は変えずに、回転域ごとの配分だけを変える（カム・ヘッド・インマニは lo/hi で別に反映済みなのでここでは触らない）。
+   ・アイドル: カムのオーバーラップ・独立スロットル・大きなインジェクター・冷え型プラグは、アイドルの燃焼がばらつく（回転が揺れる・ローピング）。
+     フライホイールが軽いほど揺れが大きく、回転が落ちやすい。落ちすぎるとエンスト。ECU のアイドル制御が強いほど安定する。
+   ・過給遅れ: インタークーラー・配管の容積、排気の抜け、カムのオーバーラップで、タービンが立ち上がるまでの時間が変わる。
+   ・熱: 水温（ラジエーター・ファン・ポンプ・ボンネットの熱抜き）・油温（オイルクーラー・オイルの粘度）・吸気温（エアクリーナーの形・遮熱・ダクト）。
+     高温では ECU が出力を絞り、ノックの余裕が減る。水メタノールは吸気温とノックを下げるが、タンクが空になると元に戻る。
+   ・駆動系: クラッチ摩擦材の食いつき（唐突さ）・ミッションの変速の速さ・ローンチ回転で、駆動系の部品にかかる衝撃が変わる。
+   c.rl.eng に数値（検査用）と card（ガレージの表示用）を入れる。仕様への反映は RL.prep（車を組み立て直したとき）に 1 回だけ行う。 */
+(function (g) {
+'use strict';
+const HW = g.HW; if (!HW || !HW.RL || HW.RL.ENG) return;
+const RL = HW.RL, T = HW.TUNE, clamp = RL.clamp, ss = RL.ss, lerp = RL.lerp;
+const ENG = RL.ENG = { VERSION: 1 };
+const RAD = Math.PI / 30;
+const nm = (o) => (o && o.name) || '';
+const gain = (o) => Math.max(0, ((o && o.pm) || 1) - 1);      // 部品が足す出力の割合
+const xv = (o, k, d) => (o && o.x && o.x[k] !== undefined ? o.x[k] : d);
+const fmt = (v, n) => (Math.round(v * Math.pow(10, n || 0)) / Math.pow(10, n || 0)).toLocaleString('en-US', { minimumFractionDigits: n || 0, maximumFractionDigits: n || 0 });
+
+/* ---------------- トルクの出方（回転域への割り振り）----------------
+   回転域: 低速（レッドラインの 15%）・中速（40%）・高速（70%）・最高回転付近（95%）。
+   重みの合計は 4（平均 1）。出力の上乗せ分 g に (重み − 1) を掛けた偏りを、その回転域のトルクに足す */
+const W = {
+  top: [0.55, 0.85, 1.25, 1.35],      // 高回転寄り: 等長ヘッダー・ストレート排気・ハイフロー触媒（脈動を使う長さが短く、背圧が低いほど高回転で効く）
+  topHi: [0.35, 0.75, 1.3, 1.6],      // 極端に高回転寄り: 直管・ファンネル・独立スロットル（排気の慣性効果・吸気の脈動が使えない低回転ではトルクが細る）
+  mid: [0.85, 1.2, 1.05, 0.9],      // 中速寄り: 長いランナー・可変吸気
+  low: [1.35, 1.15, 0.85, 0.65],      // 低速寄り: 排気量アップ（特にストローク）。燃焼室の容積が増えるぶん全域で効くが、回転が上がるほど吸気が追いつかない
+  flat: [0.9, 1.05, 1.05, 1.0]      // 全域: 通気抵抗が全域で効くもの
+};
+const mixW = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+const shape = (A, w, gv) => { for (let i = 0; i < 4; i++) A.sh[i] += gv * (w[i] - 1); };
+
+const A0 = () => ({
+  sh: [0, 0, 0, 0],
+  rough: 0, cov: 0, idleRise: 0, stallBias: 0, govK: 1, flyK: 1, heatK: 1, vib: 0,      // アイドル・慣性
+  lag: 1,      // 過給遅れ（タービンが立ち上がるまでの時間の倍率）
+  i0: 0, iV: 0, soak: 1,      // 吸気温: 停止時の上乗せ・走行中の上乗せ・熱だれの倍率
+  rad: null, fan: null, oilc: null, oilTh: null, wp: null, coolT: 0, oilDT: 0, starve: 1, dry: false, vent: 1,      // 冷却・潤滑
+  knock: 0, wmi: null,
+  shock: 1, bite: 0, judder: 0,      // 駆動系
+  eco: 1      // 燃費（燃料消費の倍率）
+});
+
+/* ---------------- 部品ごとの規則（区分の名前 → 規則）---------------- */
+const RULE = {}, reg = (keys, fn) => { for (const k of keys.split(' ')) RULE[k] = fn; };
+
+/* --- 排気・吸気 --- */
+reg('header', (o, A, K) => { const n = nm(o), gv = gain(o), race = /チタン|レース|ワンオフ|等長|Fabspeed|Akrapovi|Titan|Full-Race|6Boost|インコネル|ツインスクロール/.test(n); shape(A, race ? W.top : mixW(W.flat, W.top, 0.4), gv); if (K.turbo) A.lag *= 1 - 0.8 * gv; if (!/ステンレス|セラミック/.test(n)) A.i0 += 1; });
+reg('exhaust', (o, A, K) => { const n = nm(o), gv = gain(o), valve = /バルブ|valve/i.test(n), free = /直管|ストレート|競技|レーシング|チタン|センター出し|Akrapovi|ARQRAY|Mine's|ワンオフ|爆音|4 本出し/.test(n); shape(A, valve ? W.flat : free ? W.topHi : mixW(W.flat, W.top, 0.5), gv); if (K.turbo) A.lag *= 1 - 0.5 * gv; if (free && !valve) A.eco *= 0.995; });
+reg('catalyst', (o, A, K) => { const n = nm(o), gv = gain(o); shape(A, /レース|ストレート|レス|100 セル/.test(n) ? W.top : W.flat, gv); if (K.turbo) A.lag *= 1 - 0.6 * gv; });
+reg('centerpipe', (o, A, K) => { const gv = gain(o); shape(A, /ストレート|大径/.test(nm(o)) ? W.top : W.flat, gv); if (K.turbo) A.lag *= 1 - 0.5 * gv; });
+reg('intake', (o, A) => {
+  const n = nm(o), gv = gain(o);
+  const funnel = /ファンネル|ダイレクト/.test(n), cold = /カーボン.*(エアボックス|ダクト|キット)|Eventuri|ダクト付き|コールドエア|BMC.*(CDA|ACCDA)|エアボックス|サクション|ラム式/.test(n), open = /キノコ|ショートラム|ショート ラム|パワーフロー|エアインクス|サスパワー|リプレイスメント|ドライフロー|交換フィルター|パワー エアクリーナー|スポーツエアクリーナー|パワーインテーク|ブルートフォース|インテーク$/.test(n);
+  shape(A, funnel ? W.topHi : cold ? mixW(W.flat, W.mid, 0.3) : mixW(W.flat, W.top, 0.35), gv);
+  // 吸気温: むき出しのフィルターはエンジンルームの熱い空気を吸う（停止中ほど）。ダクトで外気を引くと走行中は冷たい空気が入る
+  if (funnel) { A.i0 += 11; A.iV += 3.5; A.rough += 0.04; } else if (cold) { A.i0 += 1.5; A.iV -= 5; } else if (open) { A.i0 += 7; A.iV += 2.5; } else { A.i0 += 3; A.iV += 1; }
+});
+reg('throttle', (o, A) => {
+  const n = nm(o), gv = gain(o), itb = /ダイナミック|ITB|個別/.test(n);
+  if (itb) { shape(A, W.topHi, gv + 0.025); A.rough += 0.3; A.cov += 0.01; A.govK *= 0.9; A.eco *= 1.015; }      // 独立スロットル: 低開度の制御が荒く、負圧が取れない（アイドルが不安定・燃費が悪い）
+  else if (!/コントローラー|レスポンス|ブースター/.test(n)) { shape(A, W.top, gv); A.rough += 0.04; }
+});
+reg('xtb', (o, A) => { const f = xv(o, 'form', 0), tb = xv(o, 'tb', 0); if (f === 2) { shape(A, W.topHi, 0.02 + 0.006 * tb); A.rough += 0.3; A.cov += 0.01; A.govK *= 0.9; A.eco *= 1.015; } else { shape(A, W.top, 0.004 * tb); A.rough += 0.02 * Math.max(0, tb - 2); } });
+reg('manifold', (o, A, K) => { if (/可変/.test(nm(o))) A.cov -= 0.001; if (K.turbo) A.lag *= 1 + 0.15 * gain(o); });
+reg('bore', (o, A) => { const gv = gain(o); shape(A, /ストローク/.test(nm(o)) ? W.low : mixW(W.low, W.flat, 0.5), gv); A.eco *= 1 + 0.2 * gv; A.vib += 0.4 * gv; });
+reg('xcrk', (o, A) => { const m = xv(o, 'mass', 1), s = xv(o, 'strokeK', 0); A.flyK *= 1 + 0.12 * (m - 1); if (s > 0) shape(A, W.low, 0.18 * (s - 1)); A.vib += 0.6 * Math.max(0, m - 1); });
+reg('crank', (o, A) => { A.flyK *= 1 - 0.3 * ((o.resp || 1) - 1); A.vib -= 0.25 * ((o.resp || 1) - 1); });
+reg('pulley', (o, A) => { A.flyK *= 1 - 0.3 * ((o.resp || 1) - 1); if (/ハーモニック|ダンパー|Fluidampr|ATI/.test(nm(o))) A.vib -= 0.15; });
+reg('xpst xrod', (o, A) => { const m = xv(o, 'mass', 1); A.flyK *= 1 + 0.03 * (m - 1); A.vib += 0.5 * Math.max(0, m - 1.05); const f = xv(o, 'fric', 1); if (f !== 1) A.eco *= 1 + 0.15 * (f - 1); });
+reg('valve', (o, A) => { shape(A, W.top, 0.4 * ((o.resp || 1) - 1)); A.eco *= 1 + 0.2 * Math.max(0, ((o.rl || 0) / 5000)); });
+reg('xvs xvr xiv xev', (o, A) => { const rk = xv(o, 'rpmK', 1) - 1; shape(A, W.top, 0.06 * rk); A.eco *= 1 + 0.003 * xv(o, 'spr', 0); });
+reg('internals', (o, A) => { const n = nm(o); if (/バランス|ブループリント/.test(n)) { A.vib -= 0.15; A.cov -= 0.003; } A.eco *= 1 + 0.2 * Math.max(0, ((o.rl || 0) / 8000)); });
+reg('head', (o, A) => { if (/バルブ大径|ビッグバルブ/.test(nm(o))) { A.rough += 0.08; A.idleRise += 40; } else A.rough += 0.03; });
+reg('xhd', (o, A) => { const d = o.idleD || 0; A.rough += 0.2 * d; A.idleRise += 70 * d; A.stallBias += 0.02 * d; });
+
+/* --- カム: オーバーラップが大きいほど、アイドルの燃焼が荒れる（排気が吸気側に戻る）。過給車ではタービンの立ち上がりも鈍る --- */
+reg('cam', (o, A, K) => { const d = o.idleD || 0; A.rough += clamp(d / 3, 0, 1); A.idleRise += 170 * d; A.stallBias += 0.04 * d; A.eco *= 1 + 0.03 * d; if (K.turbo) A.lag *= 1 + 0.02 * d; });
+reg('xcam', (o, A, K) => { const ov = xv(o, 'ovl', 0), cd = xv(o, 'camD', 0), x = Math.max(0, ov - 5); A.rough += clamp(x / 30, 0, 1.1); A.idleRise += Math.min(520, 13 * x); A.stallBias += 0.0045 * x; A.eco *= 1 + 0.0011 * cd; if (K.turbo) A.lag *= 1 + 0.003 * x; });
+/* 圧縮比: 下げるとノックしにくい（圧縮比 1 下げるごとに、ノック指数が約 0.33 下がる＝仕様の計算と同じ係数）。そのぶん熱効率は落ちて燃費が悪くなる */
+reg('compression', (o, A) => { const n = nm(o); if (/ローコン|低圧縮/.test(n)) { A.eco *= 1.03; A.knock -= 0.3; } else if (/耐ノッキング/.test(n)) A.knock -= 0.1; });
+
+/* --- 亜酸化窒素（ニトロ）: 噴射した瞬間にトルクが跳ね上がり、駆動系に衝撃が入る。ノックしやすくなる（点火を遅らせる前提）。制御が段階的だと衝撃は和らぐ --- */
+reg('nos', (o, A) => { const g1_ = Math.max(0, (o.pm || 1) - 1); A.knock += 0.04 + 0.3 * g1_; A.shock *= 1 + 1.2 * g1_; });
+reg('xnos', (o, A) => { const sh = xv(o, 'shot', 0); A.shock *= 1 + 0.35 * clamp(sh / 500, 0, 1.2); if (xv(o, 'sys', '') === 'ウェット' || xv(o, 'sys', '') === 'wet') A.knock -= 0.02; });
+reg('xnct', (o, A) => { A.shock *= 1 - 0.05 * xv(o, 'ctl', 0); });
+
+/* --- 点火・燃料・ECU --- */
+reg('ignition', (o, A) => { A.govK *= 1 + 0.6 * gain(o); A.cov -= 0.002 * Math.min(2, gain(o) / 0.015); });
+reg('plug', (o, A) => { const n = nm(o), cold = (o.idleD || 0) >= 10 || /レーシング|R7|冷え/.test(n); A.govK *= 1 + 0.5 * ((o.resp || 1) - 1); if (cold) { A.rough += (o.idleD || 0) >= 10 ? 0.24 : 0.08; A.cov += 0.004; A.knock -= 0.03; } });
+reg('fuelsys', (o, A) => { if (/大容量インジェクター|ツインポンプ/.test(nm(o))) { A.rough += 0.1; A.cov += 0.002; } });
+reg('xinj', (o, A) => { const cc = xv(o, 'cc', 0), lat = xv(o, 'lat', 1), per = xv(o, 'per', 1); A.rough += clamp((cc - 1000) / 3500, 0, 0.6) * (per > 1 ? 0.7 : 1) + (lat > 1.1 ? 0.3 : 0); A.cov += 0.003 * clamp((cc - 1000) / 2000, 0, 1); });
+reg('xpmp', (o, A) => { A.eco *= 1 + Math.min(0.08, 0.0009 * xv(o, 'amps', 0)); });      /* 燃料ポンプの電気負荷（オルタネーターが回すぶん）*/
+reg('xthm', (o, A) => { A.eco *= 1 + 0.0008 * Math.max(0, 90 - xv(o, 'thm', 90)); });      /* 低い温度で開くサーモスタットは冷えるが、暖機が遅く熱効率も落ちる */
+reg('earth', (o, A) => { A.govK *= 1 + 3 * ((o.resp || 1) - 1); });      /* アーシング: 点火・センサーの電位が安定し、アイドル制御が効く */
+reg('ecu', (o, A) => { const gv = gain(o); A.govK *= 1 + 0.4 * gv; if ((o.pm || 1) >= 1.1) A.rough += 0.08; });
+reg('xecu', (o, A) => { const tr = xv(o, 'tier', 0); A.govK *= 1 + 0.06 * Math.max(0, tr - 1); A.cov -= 0.001 * Math.max(0, tr - 2); });
+
+/* --- フライホイール・マウント --- */
+reg('flywheel', (o, A) => {
+  const n = nm(o), rs = o.resp || 1;
+  if (/デュアルマス/.test(n)) { A.flyK *= 1.18; A.cov -= 0.002; A.vib -= 0.2; }
+  else { A.flyK *= clamp(1 - 0.5 * (rs - 1), 0.6, 1); if (/アルミ|ビレット|ウルトラ|超軽量/.test(n)) A.heatK *= 0.9; A.heatK *= clamp(1 - 0.35 * (rs - 1), 0.8, 1); A.vib += 0.5 * (rs - 1); }
+});
+reg('mount', (o, A) => { const sh = o.sh === undefined ? 1 : o.sh; A.vib += (1 - sh) * 9; if (/油圧/.test(nm(o))) A.vib -= 0.25; });
+
+/* --- 過給 --- */
+/* インタークーラー・配管の容積: 大きいほど、タービンが空気を押し込んで圧が立つまでに時間がかかる（コアの重さ ≒ 容積 ≒ 立ち上がりの遅れ）*/
+reg('cooler', (o, A, K) => { if (K.turbo) A.lag *= 1 + 0.03 * (o.dm || 0); });
+reg('xic', (o, A, K) => { if (K.turbo) A.lag *= 1 + 0.02 * Math.max(0, xv(o, 'kg', 6) - 6); });
+reg('xtw', (o, A, K) => { if (K.turbo) A.lag *= 0.5 + 0.5 * xv(o, 'lagK', 1); });
+
+/* --- 冷却・潤滑（旧来の区分。X の部品が付いているときはそちらが優先）--- */
+reg('radiator', (o, A) => { A.rad = 1.15 + 3.5 * (o.dur || 0); if (/ファン/.test(nm(o))) A.fan = Math.max(A.fan || 1, /2 基/.test(nm(o)) ? 1.45 : 1.25); });
+reg('oilcooler', (o, A) => { const m = /(\d+)\s*段/.exec(nm(o)), rows = m ? +m[1] : 13; A.oilc = clamp(rows / 13, 0.5, 2.4); if (/サーモ/.test(nm(o))) A.oilTh = 1; });
+reg('cooling', (o, A) => {
+  const n = nm(o);
+  if (/ラジエーター＋オイルクーラー/.test(n)) { A.rad = Math.max(A.rad || 1, 1.3); A.oilc = Math.max(A.oilc || 0, 1); }
+  else if (/ドライサンプ/.test(n)) { A.dry = true; A.oilc = Math.max(A.oilc || 0, 1.4); }
+  else if (/ウォーターポンプ/.test(n)) A.wp = Math.max(A.wp || 1, 1.3);
+});
+reg('oilpan', (o, A) => {
+  const n = nm(o);
+  if (/ドライサンプ/.test(n)) A.dry = true; else if (/ロードレース|Canton/.test(n)) A.starve *= 0.3; else if (/バッフル/.test(n)) A.starve *= 0.55;
+  if (/キャッチ/.test(n)) A.vent *= 0.6;
+});
+reg('hood', (o, A) => {
+  const n = nm(o);
+  if (/アウトレット|ダクト|ベンチレーター|エアロボンネット/.test(n)) { A.soak *= 0.75; A.i0 -= 3; A.iV -= 1; A.hoodRad = 1.04; }      // 熱い空気をボンネット上に逃がす（エンジンルームの圧力が下がり、走行風も通りやすい）
+  else if (/スクープ/.test(n)) { A.iV -= 2.5; A.soak *= 1.05; }
+  else if (/遮熱/.test(n)) { A.soak *= 0.85; A.i0 -= 2; }
+});
+reg('heatwrap', (o, A) => {
+  const n = nm(o);
+  if (/インテーク|吸気/.test(n)) { A.i0 -= 4; A.iV -= 2; A.soak *= 0.8; }
+  else if (/ピストン/.test(n)) { /* 頂面の断熱コート: ピストンを守る耐久の部品。ノックへの効きは一長一短で一定しないので、性格は変えない */ }
+  else { A.i0 -= 2; A.soak *= 0.85; }      // 排気側の断熱: エンジンルームへの放熱が減る（排気管の中は熱いまま）
+});
+reg('oil', (o, A) => { const m = /(\d+)W-(\d+)/.exec(nm(o)); if (m) A.oilDT = clamp((+m[2] - 40) * 0.5, -12, 12); });
+reg('wmi', (o, A, K) => {
+  const n = nm(o); if (/ブラウンガス/.test(n)) return;      // 水の電気分解は燃焼を変えるほどの量にならない（効果なし）
+  const L = (/(\d+)\s*L/.exec(n) || [0, /大容量/.test(n) ? 8 : 4])[1], pm = o.pm || 1;
+  A.wmi = { L: +L, pm, dT: clamp(220 * (pm - 1), 4, 24), kn: clamp(4 * (pm - 1), 0.03, 0.3) };
+});
+
+/* --- 駆動系 --- */
+const RAT = { org: 0, cer: 0.08, met: 0.3, car: 0.3, sin: 0.7 };
+reg('clutch', (o, A) => { const r = o.rat !== undefined ? o.rat : (RAT[o.fr] || 0); A.bite = Math.max(A.bite, r); A.shock *= 1 + 0.55 * r; A.judder = Math.max(A.judder, 0.05 * r); });
+reg('xclu', (o, A) => { const fr = xv(o, 'fr', o.fr), r = Math.max(o.rat || 0, RAT[fr] || 0) + 0.03 * Math.max(0, xv(o, 'plates', 1) - 1); A.bite = Math.max(A.bite, r); A.shock *= 1 + 0.55 * r; A.judder = Math.max(A.judder, 0.05 * r); });
+reg('trans', (o, A) => { const sh = o.sh === undefined ? 1 : o.sh; if (sh < 0.99) A.shock *= 1 + 0.6 * (0.99 - sh) * (sh < 0.7 ? 1.3 : 1); });
+reg('xtrn', (o, A) => { const sh = xv(o, 'shK', 1); if (sh < 0.99) A.shock *= 1 + 0.6 * (0.99 - sh); if (/ドグ|dog|seq|シーケンシャル/i.test(nm(o) + xv(o, 'kind', ''))) A.shock *= 1.15; });
+reg('launch', (o, A) => { if (o.stall) A.shock *= 1 + 0.0004 * o.stall; });
+
+/* ---------------- 規則を集めて、特性を作る ---------------- */
+function build(ctx) {
+  const c = ctx.c, A = A0(), K = { turbo: !!c.boostCfg, c };
+  for (const s of ctx.sel) { const fn = RULE[s.key]; if (fn) { try { fn(s.opt, A, K, ctx); } catch (e) { /* 1 つの規則の失敗で全体を止めない */ } } }
+  return { A, K };
+}
+const tqPeak = (tb) => { let m = 0; for (const p of tb) if (p[1] > m) m = p[1]; return m; };
+const tqPower = (tb) => { const x1 = tb[tb.length - 1][0]; let m = 0; for (let r = 500; r <= x1; r += 25) { const p = HW.interp(tb, r) * r; if (p > m) m = p; } return m; };
+/* 回転域ごとの配分の偏り sh を掛けたトルク表を作る。最高出力は元と同じになるよう規格化する */
+function reshape(tb, red, sh) {
+  const xs = [0.15, 0.4, 0.7, 0.95], mult = (r) => { if (r <= xs[0]) return sh[0]; if (r >= xs[3]) return sh[3]; for (let i = 1; i < 4; i++) if (r <= xs[i]) return sh[i - 1] + (sh[i] - sh[i - 1]) * (r - xs[i - 1]) / (xs[i] - xs[i - 1]); return sh[3]; };
+  const x1 = tb[tb.length - 1][0], pts = new Set(tb.map((p) => p[0]));
+  for (let r = 500; r < x1; r += 500) pts.add(r);
+  const arr = Array.from(pts).sort((a, b) => a - b), nt = arr.map((r) => [r, HW.interp(tb, r) * (1 + mult(r / red))]);
+  const k = tqPower(tb) / Math.max(1, tqPower(nt));
+  return nt.map((p) => [p[0], p[1] * k]);
+}
+const around = (v, d) => Math.abs(v - d) < 1e-9;
+
+HW.RL.mod('eng', (ctx, out) => {
+  const c = ctx.c;
+  const E = out.eng = { stock: !ctx.sel.length, neutral: true };
+  if (!c.torque || c.type === 'ev' || !c.redline) { E.stock = true; return; }
+  const { A, K } = build(ctx), xr = c.xr || {}, cool0 = xr.cool || {};
+  // --- トルクの出方 ---
+  const shK = (K.turbo ? 0.4 : 1) * 0.75, sh = A.sh.map((v) => clamp(v * shK, -0.18, 0.18));      /* 過給車は吸排気の共鳴よりタービンの流量で決まるので、偏りは小さい */
+  E.sh = { lo: sh[0], mid: sh[1], hi: sh[2], top: sh[3] };
+  const reshaped = sh.some((v) => Math.abs(v) > 0.002);
+  Object.defineProperty(E, '_tq', { value: reshaped ? reshape(c.torque, c.redline, sh) : null, enumerable: false, configurable: true });
+  // --- アイドルと慣性 ---
+  const tier = xr.tier || 0, rough = clamp(A.rough, 0, 1.2);
+  E.idle = {
+    rough: +rough.toFixed(3), rise: Math.round(clamp(A.idleRise + 220 * rough * rough, 0, 650) / 10) * 10,
+    cov: +clamp((rough > 0.02 || A.cov > 0.002 ? 0.003 : 0) + A.cov + 0.02 * rough * rough + 0.012 * rough, 0, 0.08).toFixed(4),
+    lope: +(0.03 * rough * rough).toFixed(4),
+    stallRpm: Math.round((0.5 * (c.idle || 800) + 380 * rough) / 10) * 10, govK: +clamp(A.govK * (1 + 0.04 * Math.max(0, tier - 2)), 0.5, 1.8).toFixed(3)
+  };
+  E.flyK = +clamp(A.flyK, 0.5, 1.4).toFixed(3); E.heatK = +clamp(A.heatK, 0.6, 1.1).toFixed(3); E.vib = +clamp(A.vib, -0.3, 1.5).toFixed(3);
+  // --- 過給 ---
+  E.lag = +clamp(A.lag, 0.6, 1.8).toFixed(3);
+  E.tau = c.boostCfg ? +(c.boostCfg.tau * E.lag).toFixed(3) : 0;      /* 過給の立ち上がりの時定数 [秒]（ブーストコントローラー・ウエストゲート・配管の部品も含む）*/
+  E.resp = +(c.resp || 1).toFixed(3);      /* アクセル応答（フライホイール・点火・スロットル・マウント・バルブ系の合算）*/
+  // --- 吸気温 ---
+  E.iat = { i0: +A.i0.toFixed(2), iV: +A.iV.toFixed(2), soak: +clamp(A.soak, 0.4, 1.4).toFixed(3) };
+  // --- 冷却・潤滑（X の部品が付いているときは、その値のまま。旧来の区分だけを物理値にする）---
+  const hasX = (k) => ctx.has(k), val = (v, d) => (v === undefined ? d : v);
+  const rad0 = val(cool0.rad, 1), fan0 = val(cool0.fan, 1), oilc0 = val(cool0.oilc, 0), wp0 = val(cool0.wp, 1), th0 = val(cool0.oilTh, 1), st0 = val(xr.starve, 1), vent0 = val(xr.vent, 1);
+  let rad = hasX('xrad') || A.rad === null ? rad0 : A.rad; if (A.hoodRad) rad *= A.hoodRad;
+  E.cool = {
+    rad: +rad.toFixed(3), fan: +(hasX('xfan') || A.fan === null ? fan0 : A.fan).toFixed(3),
+    oilc: +(hasX('xoilc') || A.oilc === null ? oilc0 : A.oilc).toFixed(3), oilTh: hasX('xoilc') || A.oilTh === null ? th0 : A.oilTh,
+    wp: +(hasX('xwp') || A.wp === null ? wp0 : A.wp).toFixed(3), coolT: 108, oilDT: A.oilDT,
+    starve: +(hasX('xos') ? st0 : st0 * A.starve).toFixed(3),
+    dry: (A.dry || xr.drySump) ? 1 : 0, vent: +(vent0 * (hasX('xcc') ? 1 : A.vent)).toFixed(3),
+    blk: val(cool0.blk, 1), thm: val(cool0.thm, 90)      /* ブロックの冷却効率・サーモスタットが開く温度（X の部品のまま）*/
+  };
+  E.knock = +A.knock.toFixed(3);
+  if (A.wmi) E.wmi = A.wmi;
+  // --- 駆動系・燃費 ---
+  E.shock = +clamp(A.shock, 1, 2.2).toFixed(3); E.bite = +clamp(A.bite, 0, 1).toFixed(3); E.judder = +A.judder.toFixed(4);
+  E.eco = +clamp(A.eco, 0.95, 1.35).toFixed(4);
+  // 何も変わらない部品の組み合わせ（タイヤだけなど）は、仕様に触れない
+  E.neutral = !reshaped && E.idle.rough < 0.02 && E.idle.rise === 0 && E.idle.cov < 0.005 && around(E.idle.govK, 1) && around(E.flyK, 1) && around(E.heatK, 1) && Math.abs(E.vib) < 0.05 && around(E.lag, 1)
+    && Math.abs(E.iat.i0) < 0.3 && Math.abs(E.iat.iV) < 0.3 && around(E.iat.soak, 1)
+    && around(E.cool.rad, rad0) && around(E.cool.fan, fan0) && around(E.cool.oilc, oilc0) && around(E.cool.wp, wp0) && E.cool.oilDT === 0 && around(E.cool.starve, st0)
+    && E.cool.dry === (xr.drySump ? 1 : 0) && around(E.cool.vent, vent0) && Math.abs(E.knock) < 0.005 && !E.wmi && around(E.shock, 1) && E.bite < 0.02 && around(E.eco, 1);
+  let cardMemo = null;      /* ターボの立ち上がりの試算が少し重いので、読まれたときに 1 回だけ作る */
+  Object.defineProperty(E, 'card', { get() { return cardMemo || (cardMemo = cardOf(ctx, E)); }, enumerable: false, configurable: true });
+});
+
+/* ---------------- 仕様への反映（車を組み立て直したとき 1 回だけ）----------------
+   ・トルク表を新しい配列に置き換える（元の配列は共有されているので、書き換えない）
+   ・アイドル回転を上げる（荒いカムは ECU のアイドルを上げて合わせる）、エンスト回転・慣性・クラッチの熱容量は c.rlE を通して走行の計算が読む
+   ・冷却・潤滑・吸気温・ノック・水メタノールは c.xr に置き、X 層の計算が読む */
+const P0 = RL.prep;
+RL.prep = function (c) {
+  const r = P0.apply(this, arguments);
+  try { prepEng(c); } catch (e) { if (g.console && !ENG._warned) { ENG._warned = 1; console.warn('RL.ENG.prep', e && e.stack || e); } }
+  return r;
+};
+function prepEng(c) {
+  if (!c || c.rlPrepEng) return; c.rlPrepEng = true;
+  const E = c.rl && c.rl.eng, xr = c.xr; if (!E || !c.torque || c.type === 'ev') return;
+  if (xr && xr.on) {
+    xr.rlD = { coolT: E.cool ? E.cool.coolT : 108 };      // 高温の保護はすべての車に入る（純正でも、水温が上がりきれば ECU が出力を絞る）
+    if (E.wmi) xr.rlWmi = E.wmi;
+  }
+  if (!E.idle) return;
+  if (E.stock || E.neutral) { c.rlE = E; return; }      /* 部品で性格が変わらない車: 仕様は触らないが、エンスト判定だけは働く（クラッチを急につなげば純正でも止まる） */
+  if (E._tq) c.torque = E._tq;
+  if (E.idle.rise) { c.idle += E.idle.rise; if (c.stall !== undefined) c.stall = Math.max(c.stall, c.idle + 150); }
+  if (c.adv && E.idle.rough > (c.adv.rough || 0)) c.adv.rough = Math.min(1, E.idle.rough);      // 音（アイドルの不整）にも渡す
+  if (c.boostCfg && E.lag !== 1) c.boostCfg = Object.assign({}, c.boostCfg, { tau: c.boostCfg.tau * E.lag });
+  if (c.ecoK !== undefined && E.eco !== 1) c.ecoK *= E.eco;
+  if (xr && xr.on) {
+    if (xr.cool) Object.assign(xr.cool, { rad: E.cool.rad, fan: E.cool.fan, oilc: E.cool.oilc, oilTh: E.cool.oilTh, wp: E.cool.wp });
+    xr.starve = E.cool.starve; xr.drySump = !!E.cool.dry; xr.vent = E.cool.vent;
+    if (Math.abs(E.iat.i0) > 0.01 || Math.abs(E.iat.iV) > 0.01) xr.rlIat = { i0: E.iat.i0, iV: E.iat.iV };
+    if (E.iat.soak !== 1) xr.rlSoak = E.iat.soak;
+    if (E.cool.oilDT) xr.rlOilDT = E.cool.oilDT;
+    if (E.knock) xr.rlK = E.knock;
+  }
+  c.rlE = E;
+}
+ENG.prep = prepEng;
+
+/* ---------------- 走行の計算から呼ばれる部分 ---------------- */
+/* 吸気温の上乗せ（停止中 i0 → 走行中 iV へ移る） */
+ENG.iatOff = (xr, v) => { const q = xr.rlIat; return q ? q.i0 + (q.iV - q.i0) * ss(3, 30, v) : 0; };
+/* ノック指数の上乗せ（冷え型プラグなど。水メタノールはタンクが残っている間だけ） */
+ENG.kOff = (xr, xs, live) => { let k = xr.rlK || 0; const w = xr.rlWmi; if (w && (!live || (xs.wmi === undefined ? 1 : xs.wmi) > 0.02)) k -= w.kn; return k; };
+/* 水メタノール: 噴射の間はタンクが減る（燃料の約 2 割の量: 燃料は出力 1 kW あたり約 1/9600 L/s）。戻り値は吸気温の下がり幅 [℃] */
+ENG.wmiStep = (xr, xs, o, dt, live) => {
+  const w = xr.rlWmi; if (!w || !live) return 0;
+  if (xs.wmi === undefined) xs.wmi = 1;
+  if (xs.wmi > 0.02 && o.B > 0.25 && o.t > 0.6) xs.wmi = Math.max(0, xs.wmi - dt * 1.9e-5 * Math.max(0, o.P) / w.L);
+  return xs.wmi > 0.02 ? w.dT * clamp((o.B - 0.1) / 0.4, 0, 1) : 0;
+};
+/* 高温の保護（水温・油温）と、水メタノールが空のときの出力低下。戻り値 { k: 出力の倍率, msg } */
+ENG.derate = (xr, xs, e, o, live) => {
+  const r = { k: 1, msg: '' }; if (!live) return r;
+  const wT = e.wT === undefined ? 90 : e.wT, oilT = e.oilT === undefined ? 95 : e.oilT, cT = xr.rlD.coolT;
+  if (wT > cT) { r.k *= clamp(1 - 0.0045 * (wT - cT), 0.7, 1); r.msg = '水温が高く、ECU が出力を絞っています'; }
+  const oT = 138 + (xr.rlOilDT || 0); if (oilT > oT) { r.k *= clamp(1 - 0.004 * (oilT - oT), 0.75, 1); if (!r.msg) r.msg = '油温が高く、ECU が出力を絞っています'; }
+  const w = xr.rlWmi; if (w && xs.wmi !== undefined && xs.wmi <= 0.02 && o.B > 0.25) { r.k /= w.pm; r.msg = '水メタノールが空です（ノックを避けるため出力が下がります）'; }
+  return r;
+};
+
+/* アイドル付近のエンジンの回転を揺らす・エンストさせる（R4 の駆動系の計算の中から、細かい刻みごとに呼ばれる）。戻り値は軸のトルクへの加減 [N·m]
+   乱数は車ごとに決まった系列（同じ操作なら同じ結果）。揺れは「燃焼のばらつき（相関時間 0.15 秒の雑音）」＋「カムのローピング（約 1 Hz のうねり）」 */
+function rnd(S) { let x = S.s | 0; x ^= x << 13; x ^= x >>> 17; x ^= x << 5; S.s = x; return (x >>> 0) / 4294967296; }
+const gauss = (S) => (rnd(S) + rnd(S) + rnd(S) + rnd(S) - 2) * 1.7320508;
+ENG.lowTq = function (pt, E, d, alive, rpm, t, h, idle, shifting, launching, driveW) {
+  const S = pt._rl || (pt._rl = { n: 0, s: 2463534242, p1: 0, p2: 0, low: 0, grace: 0 });
+  if (!alive) { S.grace = 1.2; S.low = 0; return 0; }      // 止まっている間は何もしない。かけ直した直後 1.2 秒はエンスト判定をしない（回転が 0 から上がる間）
+  const pk = d.peak, I = E.idle;
+  let dT = 0;
+  const idl = (1 - ss(0.05, 0.18, t)) * (1 - ss(1.15 * idle, 1.7 * idle, rpm));      // アクセルが戻っていて、回転が低いときだけ
+  if (idl > 0.002) {
+    if (rpm < idle * 1.04 && I.govK !== 1) dT += (I.govK - 1) * Math.min(pk * 0.22, Math.max(0, (idle * 1.04 - rpm) * RAD * d.J / 0.09));      // アイドル制御（ISC）の力
+    if (I.cov > 0.005 || I.lope > 0) {
+      const a = Math.exp(-h / 0.15); S.n = S.n * a + gauss(S) * Math.sqrt(1 - a * a);
+      S.p1 += h * 6.2832 * 0.85; S.p2 += h * 6.2832 * 0.31;
+      dT += idl * pk * (I.cov * S.n + I.lope * (0.65 * Math.sin(S.p1) + 0.35 * Math.sin(S.p2 + 1.3)));
+      dT -= idl * Math.min(pk * 0.1, Math.max(0, (rpm - idle * 1.06) * RAD * d.J / 0.12));      // 設定より上がったら点火を遅らせて戻す
+    }
+  }
+  // エンスト: 回転が限界を割ったまま一定時間（約 0.14 秒）
+  if (S.grace > 0) S.grace -= h;
+  else if (rpm < I.stallRpm) { S.low += h; if (S.low > 0.14 && !pt.off) { pt.off = true; pt.rlStall = (pt.rlStall || 0) + 1; pt.rlStallEv = true; S.low = 0; } } else S.low = Math.max(0, S.low - h * 2);
+  return dT;
+};
+
+/* ---------------- 毎フレーム（X.gameTick から）: 警告の表示とエンストの処理 ---------------- */
+ENG.tick = function (game, dt) {
+  const pt = game.pt, c = game.spec; if (!pt || !c) return;
+  const bd = game.bdS ? game.bdS() : null, say = game.bdSay ? game.bdSay.bind(game) : null, xs = pt.xs, xr = c.xr, op = xs && xs.op, P = game.P || {};
+  if (pt.rlStallEv) {
+    pt.rlStallEv = false;
+    if (bd) bd.stall = Math.max(bd.stall || 0, 1.2 + Math.random() * 0.8);
+    if (say) say('rlstall', 5, 'エンスト！ ― アイドルが不安定です（カム・軽量フライホイール・冷えたプラグなど）。少しアクセルを踏んで回転を保ってください', true);
+  }
+  if (!say || !xs || !xr) return;
+  const th = xs.th || {};
+  if (xr.rlD && P.wT > xr.rlD.coolT + 2 && op && op.prot === '水温が高く、ECU が出力を絞っています') say('rlwt', 15, '水温 ' + Math.round(P.wT) + '℃ ― ECU が出力を絞っています。ラジエーター・ファン・ボンネットの熱抜きを見直してください', true);
+  if (th.iat !== null && th.iat !== undefined && op && op.iatRef !== undefined && th.iat - op.iatRef > 28 && (op.t || 0) > 0.6) say('rliat', 20, '吸気温が ' + Math.round(th.iat) + '℃ まで上がり、出力が落ちています（熱だれ）― 走行風を当てる・インタークーラー・ダクトを見直してください', true);
+  if (xr.rlWmi && xs.wmi !== undefined && xs.wmi <= 0.02 && op && op.B > 0.25) say('rlwmi', 25, '水メタノールのタンクが空です ― ノッキングを避けるため出力が下がります', true);
+  if (xr.rlOilDT !== undefined && P.oilT > 138 + xr.rlOilDT + 4) say('rloil', 20, '油温 ' + Math.round(P.oilT) + '℃ ― 粘度の低いオイルは高温で油膜が切れます。オイルクーラーか粘度の高いオイルを', true);
+  // 荒いアイドルのエンジンの振動を車体へ（停車中のみ）
+  const E = c.rlE; if (E && E.vib > 0.15 && Math.abs(P.v || 0) < 1.5 && (pt.rpm || 0) < (c.idle || 800) * 1.5 && !pt.off) game.shake = Math.max(game.shake || 0, Math.min(0.06, 0.012 * E.vib));
+};
+
+/* ---------------- ガレージの表示（部品で変わった性格）---------------- */
+function boostCurve(c, rpm, secs, dt) {
+  const pt = new HW.Powertrain(c); pt.gear = 2; pt.xv = 25; pt.boost = 0; const pk = c.boostCfg.peakBar || 0, out = [];
+  for (let t = 0; t <= secs + 1e-9; t += dt) { pt.rpm = rpm; pt.boostStep(rpm, 1, dt, false); out.push(pt.boost * pk); }
+  return out;
+}
+ENG.boostCurve = boostCurve;
+/* ターボ: 3,000rpm 全開の立ち上がり（最終の 9 割に届くまでの時間）と、フルブーストになる回転数 */
+ENG.spool = function (c) {
+  if (!c.boostCfg || c.boostCfg.kind !== 'turbo' || !c.boostCfg.peakBar) return null;
+  const red = c.redline || 7000, pk = c.boostCfg.peakBar, dt = 0.05;
+  const cur = boostCurve(c, 3000, 5, dt), fin = cur[cur.length - 1]; let t90 = null; for (let i = 0; i < cur.length; i++) if (cur[i] >= 0.9 * fin) { t90 = i * dt; break; }
+  let full = null; for (let r = 1500; r <= red; r += 250) { const q = boostCurve(c, r, 3, 0.1); if (q[q.length - 1] >= 0.9 * pk) { full = r; break; } }
+  return { fin, t90, full, pk };
+};
+/* 冷却水の定常温度。X.coolStep の熱収支と同じ式（出力の 1.25 倍の熱が入り、ラジエーターで捨てる熱が釣り合う温度）。サーモスタットが閉じている間は捨てられないので、二分法で解く */
+/* ラジエーターの大きさは「純正の出力」に合わせて作られている。出力を上げても、冷却部品を替えなければ放熱は増えない（純正は出力の約 3 割増しまで余裕がある。
+   それを超えた分の効きは 35%）。純正の 4 倍を超える仕様は、競技専用の冷却（大型ラジエーター・氷水など）を前提にしてきた従来の扱いのまま（2.2〜4 倍の間でなめらかに移る）*/
+ENG.kwRad = (c) => { const kw = c.kw || 60, k0 = (c.xr && c.xr.kw0) || kw, cap = 1.3 * k0; if (kw <= cap) return kw; const lim = cap + 0.35 * (kw - cap); return lim + (kw - lim) * ss(2.2 * k0, 4 * k0, kw); };
+function wtSteady(c, E, amb, v) {
+  const kw = Math.max(20, c.kw || 60), kwr = ENG.kwRad(c), sp = clamp(v / 22, 0, 1), cl = (c.xr && c.xr.cool) || {}, open = cl.thm || 90;
+  const f = (wT) => { const thermo = clamp((wT - (open - 4)) / 8, 0.01, 1), fanB = wT > 98 ? 1.15 : 1, air = 0.8 + 0.012 * kwr + 1.6 * sp + (E.cool.fan - 1) * 0.9 * (1 - sp) * (0.6 + 0.012 * kwr); return air * E.cool.rad * (0.9 + 0.1 * E.cool.wp) * thermo * fanB * (wT - amb) - 1.25 * kw; };
+  let lo = amb, hi = 175; if (f(hi) < 0) return hi;
+  for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (f(m) > 0) hi = m; else lo = m; }
+  return (lo + hi) / 2;
+}
+ENG.wtSteady = wtSteady;
+function cardOf(ctx, E) {
+  const c = ctx.c, rows = [], X_ = HW.X, red = c.redline || 7000, tq = E._tq || c.torque, eng = ctx.eng || ctx.base || {}, tq0 = eng.torque || c.torque;
+  if (E.stock || E.neutral || !tq) return rows;
+  const rp = (f) => fmt(Math.round(f * red / 100) * 100, 0), rel = (tb, f) => HW.interp(tb, f * red) / Math.max(1, tqPeak(tb));
+  const red0 = eng.redline || red, lo = rel(tq, 0.3), lo0 = HW.interp(tq0, 0.3 * red) / Math.max(1, tqPeak(tq0)), hi = rel(tq, 0.88), hi0 = HW.interp(tq0, 0.88 * red0) / Math.max(1, tqPeak(tq0));
+  const row = (label, txt, good) => rows.push({ label, txt, good });
+  if (Math.abs(lo - lo0) > 0.012 || Math.abs(hi - hi0) > 0.012 || E._tq) {
+    row('低速トルク', rp(0.3) + 'rpm で最大の ' + Math.round(lo * 100) + '%（純正 ' + Math.round(lo0 * 100) + '%）', lo - lo0 < -0.04 ? -1 : lo - lo0 > 0.03 ? 1 : 0);
+    row('高回転域', rp(0.88) + 'rpm で最大の ' + Math.round(hi * 100) + '%（純正 ' + Math.round(hi0 * 100) + '%）', hi - hi0 > 0.03 ? 1 : hi - hi0 < -0.04 ? -1 : 0);
+  }
+  let lagBad = 0;
+  if (c.boostCfg && c.boostCfg.kind === 'turbo') {
+    const s = ENG.spool(c);
+    if (s) {
+      const none = s.fin < 0.15 * s.pk, slow = none || s.t90 === null || s.t90 > 1.8 || (s.full && s.full > 0.62 * red);
+      lagBad = none || (s.full && s.full > 0.62 * red) ? 0.9 : s.t90 !== null && s.t90 > 1.8 ? 0.6 : 0;
+      row('ターボラグ', (none ? '3,000rpm では立ち上がらない' : '3,000rpm 全開で ' + (s.t90 === null ? '—' : s.t90.toFixed(1)) + ' 秒') + (s.full ? '／' + fmt(s.full, 0) + 'rpm からフルブースト' : ''), s.t90 !== null && !none && s.t90 < 1.0 && !(s.full && s.full > 0.62 * red) ? 1 : slow ? -1 : 0);
+    }
+  }
+  const I = E.idle, ro = I.rough, idle0 = Math.round(((eng.idle || c.idle || 800) + I.rise) / 10) * 10;
+  if (ro > 0.02 || I.rise > 0 || I.cov > 0.005 || E.flyK < 0.93 || E.flyK > 1.07)
+    row('アイドル', (ro < 0.12 ? '安定' : ro < 0.4 ? 'やや不安定（回転が揺れる）' : ro < 0.75 ? '荒い（ローピング）' : 'かなり荒い（止まりかけの不整）') + '・' + fmt(idle0, 0) + 'rpm' + (E.flyK < 0.85 ? '・フライホイールが軽く、回転が落ちるとエンストしやすい' : (I.stallRpm > 0.55 * (idle0)) ? '・エンストしやすい' : E.flyK > 1.1 ? '・フライホイールが重く、回転が落ちにくい' : ''), ro < 0.12 && E.flyK >= 0.9 ? (E.flyK > 1.1 ? 1 : 0) : -1);
+  if (E.cool) {
+    const w1 = wtSteady(c, E, 35, 27.8), w0 = wtSteady(c, { cool: { rad: 1, fan: 1, wp: 1 } }, 35, 27.8);
+    const dc = Math.abs(E.cool.rad - 1) + Math.abs(E.cool.fan - 1) + Math.abs(E.cool.wp - 1) > 0.02 || E.cool.oilc > 0 || E.cool.dry || E.cool.oilDT;
+    if (dc || w1 > 100) {
+      const oil = w1 + 18 - 9 * Math.min(2.4, E.cool.oilc) + (c.boostCfg ? 5 * (c.boostCfg.peakBar || 0) : 0);
+      row('熱余裕', '35℃・100km/h 全開で水温 ≈ ' + Math.round(w1) + '℃、油温 ≈ ' + Math.round(oil) + '℃' + (w1 > 108 ? '（ECU が出力を絞る）' : w1 > 100 ? '（余裕が少ない）' : '（余裕あり）') + (E.cool.dry ? '・ドライサンプ' : ''), w1 > 106 ? -1 : w1 < 96 && w0 > 98 ? 1 : 0);
+    }
+  }
+  if (X_ && (Math.abs(E.iat.i0) > 0.5 || Math.abs(E.iat.iV) > 0.5 || E.iat.soak !== 1 || E.wmi)) {
+    const xr2 = Object.assign({}, c.xr, { rlIat: { i0: E.iat.i0, iV: E.iat.iV }, rlSoak: E.iat.soak }), xr0 = Object.assign({}, c.xr, { rlIat: undefined, rlSoak: undefined }), B = c.boostCfg ? c.boostCfg.peakBar || 0 : 0, Pk = (c.kw || 100) * 0.6;
+    const at = (x, v) => X_.iatModel(x, { amb: 35, pa: 1.01325, B, v, t: 1, P: Pk, ice: 1, icw: 43 });
+    const a1 = at(xr2, 8), a0 = at(xr0, 8), b1 = at(xr2, 28), b0 = at(xr0, 28), d1 = a1 - a0, d2 = b1 - b0;
+    row('吸気温', '35℃・30km/h 全開 ' + Math.round(a1) + '℃ ／ 100km/h ' + Math.round(b1) + '℃（純正比 ' + (d1 >= 0 ? '+' : '') + Math.round(d1) + '／' + (d2 >= 0 ? '+' : '') + Math.round(d2) + '）' + (E.wmi ? '・水メタノールで最大 −' + Math.round(E.wmi.dT) + '℃' : ''), d1 + d2 > 6 ? -1 : d1 + d2 < -4 || E.wmi ? 1 : 0);
+  }
+  if (Math.abs(E.knock) > 0.01 || E.wmi) row('ノック余裕', (E.knock < 0 || E.wmi ? '冷え型プラグ・水メタノールなどでノックに強い' : 'ノックに弱くなる') + (E.wmi ? '（タンクが空の間は戻る）' : ''), E.knock < 0 || E.wmi ? 1 : -1);
+  if (E.bite > 0.1 || E.shock > 1.1) row('クラッチ・駆動', (E.bite > 0.55 ? 'ミートが唐突（焼結メタル）・発進でガクガクしやすい' : E.bite > 0.2 ? 'ミートがやや唐突' : 'ミートは滑らか') + '・駆動系への衝撃 ×' + E.shock.toFixed(2), E.bite > 0.4 || E.shock > 1.3 ? -1 : 0);
+  if (E.eco > 1.012 || E.eco < 0.99) row('燃費', (E.eco > 1 ? '+' : '') + ((E.eco - 1) * 100).toFixed(1) + '% の燃料消費', E.eco > 1 ? -1 : 1);
+  if (E.vib > 0.25) row('振動', 'エンジンの振動が車体に伝わる', -1); else if (E.vib < -0.1) row('振動', 'エンジンの振動を吸収する', 1);
+  if (Math.abs(E.resp - 1) > 0.04) row('アクセル応答', '×' + E.resp.toFixed(2) + (E.flyK < 0.9 ? '（回転の上下が軽い）' : ''), E.resp > 1 ? 1 : -1);
+  // 総合: 街乗りのしやすさ（ここは必ず残す: 先に並べた行が 8 を超えるときは、他の行を削る）
+  const bad = lagBad + (ro > 0.4 ? 1 : 0) + (E.flyK < 0.8 ? 0.5 : 0) + (E.bite > 0.5 ? 0.7 : 0) + (lo - lo0 < -0.08 ? 0.8 : 0) + (E.vib > 0.4 ? 0.4 : 0);
+  const dr = { label: 'ドライバビリティ', txt: bad < 0.3 ? '街乗りも楽（扱いやすさは純正並み）' : bad < 1.2 ? 'やや気を使う（低回転では神経質）' : bad < 2.2 ? '街乗りは疲れる（競技寄り）' : '競技専用（発進・低速が難しい）', good: bad < 0.3 ? 0 : -1 };
+  return rows.slice(0, 7).concat([dr]);
+}
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ================= v30 音の担当（RL.sound）=================
+   選んだ部品の「実在の物理」から、音の側のパラメータを導く。部品を付けたのに音が変わらない、をなくすための層。
+   ・排気: 触媒のセル数（400cpsi の純正 → 200 → 100 → 触媒レス）で消音量が減る分だけ大きく硬く（+1.4 / +2.4 / +4.5 dB）。ヘッダーは等長ほど枝ごとの脈動の遅れが消えて滑らか、
+           薄肉のチタンは高い響きが残る。バルブ付きマフラーは弁が閉じているあいだ静か。排気全体の音量は dB で足し合わせ、作り込み済みの値（c.snd）より足りない分だけ上乗せする
+   ・吸気: エアボックス（共鳴器つき）をやめて裸のフィルターにすると 150〜400Hz の吸気の唸りが +2〜4 dB。ITB（個別スロットル）は気筒ごとに吸気管が叩かれて鋭く吠える。
+           インテークマニホールドは枝の長さで吸気音の高さが変わる
+   ・エンジン: オーバーラップの大きいカム → アイドルの不整（ドロドロ）とバルブ周りの機械音。鍛造ピストン（隙間が大きい）→ 冷間時のピストンスラップ。
+           軽量フライホイール・デュアルマス廃止 → アイドルのギヤのカラカラ（ラトル）。大きなインジェクター・外付けの燃料ポンプ → カチカチ音・唸り
+   ・駆動系: ドグ・直歯ギヤ、クイックチェンジ、ストレートカットのデフ → 歯車の唸り。リジッド/ピロのエンジンマウント → 車内に響くこもり音（構造伝搬）。
+   ・車体: 遮音材・内装を外す、ポリカの窓、ロールケージ → 車内の騒音（質量則: 遮音の質量が減ると透過が増える）。タイヤの種類・幅・空気圧でロードノイズ。ブッシュ・スプリングの硬さで突き上げ音。
+           ウイング・ルーフキャリアで風切り音、競技用パッド・スリットローターでブレーキ鳴き、電動ファン（水温が上がると回る）、ナイトロのヒス音
+   ・ECU: スタンドアロンは点火カットのリミッター（20Hz 超で「バババ」）、書き換えは燃料カット（やわらかい）。アフターファイアは「抜け・ECU・カムの重なり・アンチラグ」から
+   使い方: c.rl.snd に結果が入る（RL.mod('sound')）。ゲーム側は HW.RLS.post(game, dt)（audioUpdate のあとに呼ぶ）で合成器に渡す */
+(function (g) {
+'use strict';
+const HW = g.HW; if (!HW || !HW.RL || HW.RLS) return;
+const RL = HW.RL, clamp = RL.clamp, ss = RL.ss, RLS = HW.RLS = { VERSION: 1 };
+const dbg = (d) => Math.pow(10, d / 20), gdb = (r) => 20 * Math.log10(Math.max(1e-6, r)), num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : (d === undefined ? 0 : d));
+const T = (re, s) => re.test(s || '');
+/* 合成器の追加パラメータの初期値（純正 = 何も足さない。patch_rl_sound.py の NOSX と同じ） */
+const NOSX = { nvh: 0, mount: 0, mech: 0, rasp: 0, itb: 0, xg: 0, pw: 0, cov: 0, tick: 0, slap: 0, injT: 0, pump: 0, rattle: 0, diff: 0, hum: 0, gearW: 0, exv: 0, exvK: 1, limHz: 13, limD: 0.1, limPop: 0, popL: -1, nosK: 0, nosP: 0 };
+RLS.NOSX = NOSX;
+const NOK = { q: 1, wind: 1, road: 1, tire: 1, tireHz: 0, thump: 1, hum: 0 };
+RLS.NOK = NOK;
+
+/* ---- 名前の見分け ---- */
+const RE = {
+  ti: /チタン|titan|Ti\b|Titan/i, inc: /インコネル|inconel/i, eq: /等長|4-2-1|4-1|ロングチューブ|equal/i, tw: /ツインスクロール|twin.?scroll|T6/i,
+  straight: /ストレート|直管|触媒レス|テストパイプ|test.?pipe/i, valved: /バルブトロニック|バルブ付|Valvetronic|valved/i,
+  itb: /ITB|個別スロットル|ダイナミック|スタック|ファンネル/i, dog: /ドグ|\bdog|シーケンシャル|sequential|ストレートカット|直線歯|ハイブリッド|ラリー/i,
+  mtSolid: /ソリッド|リジッド|ハード|ピロ|solid|rigid|pillow|ビレット/i, mtHyd: /油圧|液封|ハイドロ|hydraulic|振動減衰/i, mtUre: /ウレタン|ポリウレタン|polyurethane|prothane|インサート/i,
+  open: /キノコ|ファンネル|ダイレクト|ラム|ショートラム|レーシング ?サクション|サクション|Eventuri|ダクト付き|トランペット/i,
+  coldAir: /コールドエア|cold.?air|57i|63 シリーズ|インダクション|タイフーン|Momentum|Mishimoto|Injen|ブルートフォース|BMC (CDA|ACCDA)|エアボックス|カーボン/i,
+  power: /パワーインテーク|スーパーパワーフロー|エアインクス|サスパワー|パワー エアクリーナー|N1 エボリューション|アドバンスパワー|エアクリーナー|キット/i,
+  dropin: /リプレイスメント|交換フィルター|CRF|ドライフロー|フィルター|スポーツ/i,
+  standalone: /フルコン|F-CON V|Power ?FC|パワー ?FC|Link|Haltech|MoTeC|AEM (Series 2|Infinity)|Syvecs|Bosch Motorsport|MaxxECU|e-Manage Ultimate|DR-X/i, flash: /Cobb|Ecutek|EcuTek|Hondata|Flash|ECUチューニング|RaceROM|Accessport|S300|K-Pro|FlashPro/i,
+  coldPlug: /レーシング ?プラグ|冷え型|熱価|R7|M45i|M40i/i, solidLift: /ソリッドリフター|メカニカルリフター|ソリッド/i,
+  forged: /鍛造|forged|ビレット|billet|JE|CP-Carrillo|Wiseco|Mahle|ARIAS|ASP|H ?ビーム/i, balanced: /バランス|ブループリント|blueprint|フルカウンター/i,
+  dmf: /デュアルマス|DMF|静粛/i, ext: /外付け|インライン|Aeromotive|Eliminator|A1000|メカニカル|ツインポンプ/i,
+  wgExt: /外排気|外部|大気開放|ダンプ|MVR|ProGate|TiAL|ウエストゲート/i, bovAtm: /大気開放|SQV|SSQV|Sport Q|TiAL.*Q|ブローオフ/i, noBov: /ブローオフ無し|サージ仕様/i,
+  carbonCer: /カーボンセラミック|CCM|セラミック ブレーキ|Carbon.?Ceramic/i, slot: /スリット|ドリル|slot|drill|グルーブ|groove/i,
+  poly: /ポリカ|polycarb|アクリル|lexan/i, deaden: /遮音材|デッドニング|サイレンサー材|内装全撤去|内装ほぼ撤去|内装撤去/i, quietIns: /静音|遮音強化|インシュレーター/i,
+  roofRack: /キャリア|ラック|ボックス|スキー/i, big: /大型|ビッグ|ダブル|GT|可変/i, quick: /クイック ?チェンジ|Quaife|Winters|Albins|ドラッグ|ストレートカット/i,
+};
+/* ---- 触媒のセル数（cpsi）。純正のセラミックは 400 とする ---- */
+const cellsOf = (nm) => { const m = /(\d+)\s*セル/.exec(nm); if (m) return +m[1]; if (T(RE.straight, nm)) return 0; if (/レース|競技|ハイフロー|race/i.test(nm)) return 100; if (/メタル|スポーツ|metal|sport/i.test(nm)) return 200; return 300; };
+const cat = (cells) => 4.5 * Math.pow(cells / 400, 0.55);      // 触媒が 500〜3000Hz で消す量（dB）。400cpsi で 4.5dB、200 で 3.1、100 で 2.1、無しで 0
+
+/* ---- 集計用の入れもの ---- */
+const blank = () => ({ exDb: 0, hiDb: 0, drone: 0, hdK: 1, pipeK: 1, gD: 0, rasp: 0, raspX: 0, popL: 0, exv: 0, exvK: 1, catDel: 0,
+  intkDb: 0, itb: 0, inRun: 0, plenum: 0,
+  lope: 0, tick: 0, slap: 0, injT: 0, pump: 0, mech: 0, cov: 0, rattle: 0, gearW: 0, diff: 0, hum: 0, mount: 0, nvh: 0,
+  ecuT: 0, limHz: 0, limD: -1, limPop: 0, als: 0, launch: 0,
+  roadDb: 0, roadHz: 0, tireCls: '', hum2: 0, thump: 0, windDb: 0, squeal: 0, grind: 0, whirr: 0, fan: 0, brk: 0,
+  nosHp: 0, nosSys: '', nosProg: 0, gas: 0, alc: 0,
+  wgExt: 0, wgSz: 0, bov: 0, cool: 0, pipe: 0, wmi: 0, txk: '', clat: 0, dispR: 1, rows: [] });
+
+/* ---- 規則表（区分 → 集計への足し込み）。o = 選ばれた部品 ---- */
+const R = {};
+R.catalyst = (o, A) => { const nm = o.name || '', n = cellsOf(nm), d = cat(400) - cat(n); A.exDb += d; A.hiDb += 0.6 * d; if (n === 0) { A.rasp += 0.45; A.drone += 0.12; A.popL = Math.max(A.popL, 1); A.catDel = 1; } else if (n <= 100) { A.rasp += 0.15; } };
+R.centerpipe = (o, A) => { const nm = o.name || ''; if (T(RE.straight, nm)) { A.exDb += 2.5; A.drone += 0.35; A.rasp += 0.2; A.popL = Math.max(A.popL, 1); } else if (/大径/.test(nm)) { A.exDb += 1.2; A.drone += 0.12; } else if (/直結|2\.5/.test(nm)) A.exDb += 0.8; if (T(RE.ti, nm)) { A.exDb += 0.3; A.hiDb += 0.6; } };
+R.header = (o, A) => { const nm = o.name || '', ti = T(RE.ti, nm), eq = T(RE.eq, nm) || T(RE.tw, nm);
+  A.exDb += 0.5 + (ti ? 0.5 : 0); A.hiDb += 0.6 + (ti ? 1.2 : 0.3);      // 鋳鉄（厚くて鳴かない）をやめて薄肉の鋼管に: 放射される高音が増える。チタンはさらに薄く軽く、よく鳴る
+  A.hdK *= eq ? 0.4 : 0.75;      // 等長: 気筒ごとの排気の遅れ（不等長の「ドコドコ」）が減る
+  A.pipeK *= /ロング|long/i.test(nm) ? 1.12 : /ショート|short/i.test(nm) ? 0.88 : 1.05; if (T(RE.tw, nm)) A.hdK *= 0.85; if (ti) A.rasp += 0.1; };
+R.exhaust = (o, A) => { const nm = o.name || '', sn = o.snd || {};
+  if (T(RE.ti, nm) || T(RE.inc, nm)) { A.hiDb += 1.6; A.rasp += 0.15; }      // 薄肉のチタン・インコネルは高い響きが残る
+  if (T(RE.valved, nm)) { A.exv = 1; A.exvK = 0.38; }      // 弁が閉じているあいだは純正並みに静か
+  A.raspX += 0.35 * num(sn.mfR); A.gD += 0.04 * num(sn.mfR);      // 抜けのよい（レゾネーター無しの）マフラーほど燃焼のざらつきが聞こえる（作り込み済みの mfR とは別に、燃焼のざらつきの音だけに足す）
+  if (/Akrapovi|アクラポビッチ/i.test(nm)) { A.hiDb += 0.8; A.rasp += 0.12; } else if (/Borla|MagnaFlow/i.test(nm)) { A.drone += 0.2; A.hiDb -= 0.4; }
+  if (o.tip) { const a = (o.tip.n || 1) * Math.pow((o.tip.r || 0.05) / 0.05, 2); A.drone += clamp(0.06 * (a - 1), 0, 0.3); } };
+R.xw_exh = (o, A) => { A.hiDb += T(RE.inc, o.name) ? 1.4 : 1.0; A.exDb += 0.3; };      // チタン・インコネルの排気は薄肉でよく鳴る
+R.heatwrap = (o, A) => { if (/排気|エキマニ|ラップ|Wrap|ターボ|セラミック|チタニウム|バンテージ/i.test(o.name || '') && !/インテーク|吸気/.test(o.name || '')) A.hiDb -= 0.6; };      // 排気管の断熱・コーティングは管の振動（放射音）をわずかに抑える
+R.intake = (o, A) => { const nm = o.name || ''; let db = 1.0;
+  if (T(RE.dropin, nm) && !T(RE.coldAir, nm) && !T(RE.open, nm)) db = 0.35; if (T(RE.power, nm)) db = 1.8; if (T(RE.coldAir, nm)) db = 2.6; if (T(RE.open, nm)) db = 3.5; if (/ファンネル|ダイレクト/.test(nm)) db = 5;
+  if (/静音|サイレント|ドライ/.test(nm) && /エアボックス|ボックス/.test(nm)) db = 0.4; A.intkDb += db; };
+R.piping = (o, A) => { const nm = o.name || ''; A.pipe = 1; if (/サクション|大径/.test(nm)) A.intkDb += 1.0; };
+R.hood = (o, A) => { const nm = o.name || ''; if (/スクープ|ダクト|インテーク/.test(nm)) A.intkDb += 0.8; if (/ベンチ|アウトレット|エアアウトレット/.test(nm)) A.windDb += 0.3; if (/カーボン|FRP|軽量/.test(nm) || num(o.dm) < -2) A.nvh += 0.03; };      // 薄い軽量ボンネットは遮音が減る
+R.throttle = (o, A) => { const nm = o.name || ''; if (T(RE.itb, nm)) { A.itb = 1; A.intkDb += 2.0; } else if (/大口径|スロットルボディ|\d+mm|\d+φ/.test(nm)) { const d = +(/(\d{2})\s*(mm|φ)/.exec(nm) || [0, 60])[1]; A.intkDb += clamp(0.3 * (d - 60) / 10, 0.2, 1.2); } };
+R.xtb = (o, A) => { const x = o.x || {}; if (x.form === 2 || T(RE.itb, o.name || '')) { A.itb = 1; A.intkDb += 2.2; } else A.intkDb += clamp(0.3 * (num(x.d, 60) - 60) / 10, 0, 1.2); };
+R.manifold = (o, A) => { const nm = o.name || ''; A.inRun += num(o.hi) - num(o.lo); if (/サージタンク|チャンバー|ビレット|プレナム|大容量/.test(nm)) { A.plenum = 1; A.intkDb += 0.8; A.drone += 0.05; } };
+R.cam = (o, A) => { const d = num(o.idleD); A.tick += 0.1; A.lope = Math.max(A.lope, 0.2 * d); A.tick += 0.3 * d; A.popL = Math.max(A.popL, d >= 3 ? 1.5 : d >= 2 ? 1 : 0); A.rasp += 0.06 * d; };
+R.xcam = (o, A) => { const x = o.x || {}, d = num(o.idleD), ov = num(x.ovl); A.lope = Math.max(A.lope, 0.2 * d, clamp((ov - 22) / 60, 0, 0.7)); A.tick += 0.3 * d + 0.12 * num(x.camL); A.popL = Math.max(A.popL, d >= 3 ? 1.5 : d >= 2 ? 1 : 0); A.rasp += 0.06 * d; };
+R.valve = (o, A) => { const nm = o.name || ''; if (T(RE.solidLift, nm)) A.tick += 0.8; else if (/スプリング|ロッカー/.test(nm)) A.tick += 0.15; };
+R.xvs = (o, A) => { A.tick += 0.05 * num((o.x || {}).spr); };
+R.xiv = (o, A) => { A.tick += 0.04 * num((o.x || {}).valve) * (T(RE.ti, o.name) ? 1.5 : 1); };
+R.xev = (o, A) => { A.tick += 0.04 * num((o.x || {}).valve); };
+R.xvr = (o, A) => { A.tick += 0.05 * num((o.x || {}).ret); };
+R.internals = (o, A) => { const nm = o.name || ''; if (/スプリング|リテーナ/.test(nm)) A.tick += 0.15; if (T(RE.forged, nm)) A.slap += 0.35; if (T(RE.balanced, nm)) { A.cov -= 0.025; A.mech -= 0.12; } };
+R.bore = (o, A) => { if (T(RE.forged, o.name)) A.slap += 0.3; A.dispX = 1 + 0.8 * (num(o.pm, 1) - 1); };      // 排気量が増えるぶん、排気の脈動が大きい
+R.head = (o, A) => { A.intkDb += clamp(0.3 * (num(o.pm, 1) - 1) / 0.03, 0, 0.6); };      // ポート研磨: 流量が増えて吸気・排気の流れの音が大きい
+R.xpst = (o, A) => { const x = o.x || {}; A.slap += clamp((num(x.exp, 1) - 1.25) * 1.1, 0, 0.7); A.mech += clamp((num(x.fric, 1) - 1) * 1.5, 0, 0.3); };
+R.xrod = (o, A) => { A.mech += clamp((1 - num((o.x || {}).fat, 1)) * 0.1, 0, 0.08); };      // アルミのコンロッドなど疲労寿命が短いもの（鋼より柔らかい）は軸受けの打音が出やすい
+R.xcrk = (o, A) => { if (T(RE.balanced, o.name)) { A.cov -= 0.015; A.mech -= 0.06; } };
+R.crank = (o, A) => { if (T(RE.balanced, o.name)) { A.cov -= 0.02; A.mech -= 0.08; } };
+R.pulley = (o, A) => { if (/ハーモニック|ダンパー|Fluidampr|ATI/.test(o.name || '')) A.mech -= 0.1; };      // ねじり振動ダンパーで機械の唸りが減る
+R.plug = (o, A) => { if (T(RE.coldPlug, o.name || '') || num(o.idleD) >= 10) A.lope = Math.max(A.lope, 0.1); };      // 冷え型のプラグはアイドルでくすぶる
+R.fuelsys = (o, A) => { const nm = o.name || ''; const m = /(\d{3,4})\s*cc/i.exec(nm) || /ID(\d{3,4})X?/.exec(nm); if (m) A.injT += clamp(0.25 * Math.log2(+m[1] / 440), 0, 0.9); else if (/インジェクター/.test(nm)) A.injT += 0.2;
+  if (T(RE.ext, nm) || /Bosch 04|Walbro F9|Sard フューエルポンプ|HKS フューエルポンプ/.test(nm)) A.pump += /ツイン/.test(nm) ? 0.8 : 0.55; else if (/ポンプ|Walbro|DeatschWerks|DW\d+|L\/h|LPH/.test(nm)) A.pump += /インタンク|DW|GSS/.test(nm) ? 0.14 : 0.2; if (/レギュレーター|レール/.test(nm)) A.injT += 0.04; };      // 外付けのポンプは車体に直付けで唸りが車内まで届く。タンクの中のポンプは燃料に浸かって静か
+R.xinj = (o, A) => { const x = o.x || {}, cc = num(x.cc, 440) * (x.per || 1); A.injT += clamp(0.25 * Math.log2(cc / 440), 0, 1); if (x.inj >= 9) A.mech += 0.1; };
+R.xpmp = (o, A) => { const x = o.x || {}, lph = num(x.lph, 190); A.pump += clamp(0.12 + 0.2 * Math.log2(lph / 190), 0.08, 0.9) * (x.mech ? 2.2 : 1) * (1 + 0.25 * (num(x.n, 1) - 1)); };
+R.xrail = (o, A) => { A.injT += 0.04; };
+R.wmi = (o, A) => { A.pump += 0.15; A.wmi = 1; };
+R.ecu = (o, A) => { const nm = o.name || '', sa = T(RE.standalone, nm), fl = T(RE.flash, nm); A.ecuT = Math.max(A.ecuT, sa ? 3 : fl ? 2 : 1.5); if (/ロケットスタート/.test(nm)) A.launch = 1; };
+R.xecu = (o, A) => { const t = num((o.x || {}).tier); A.ecuT = Math.max(A.ecuT, t >= 5 ? 4.5 : t >= 3 ? 3 : t >= 2 ? 2 : 1.2); if (t >= 5) A.launch = 1; };
+R.launch = (o, A) => { const sn = o.snd || {}; if (num(sn.ecu) >= 2) { A.launch = 1; A.limPop = Math.max(A.limPop, 0.4); A.limHz = Math.max(A.limHz, 26); A.popL = Math.max(A.popL, 2); } else if (o.id !== 0) A.limHz = Math.max(A.limHz, 16); };
+R.boostctl = (o, A) => { if (num((o.snd || {}).als) || /アンチラグ/.test(o.name || '')) { A.als = 1; A.popL = Math.max(A.popL, 2); A.limPop = Math.max(A.limPop, 0.3); } };
+R.fuel = (o, A) => { const f = o.prof || {}; if (f.gas) A.gas = 1; else if (num(f.lhv, 30) < 25 && num(f.kn) <= -0.9) { A.alc = 1; A.popL = Math.max(A.popL, 1); } };
+R.flywheel = (o, A) => { const nm = o.name || '', rs = num(o.resp, 1); if (T(RE.dmf, nm)) { A.rattle -= 0.5; A.cov -= 0.02; } else if (rs > 1.005) { const lt = 1 - 1 / rs; A.rattle += clamp(lt * 2.2, 0, 0.9); A.cov += 0.12 * lt; A.lope = Math.max(A.lope, 0.1 * lt * 4); } };      // 軽いフライホイール: 回転の整えが効かず、アイドルでギヤがカラカラ、燃焼のばらつきも目立つ
+R.clutch = (o, A) => { A.clat = Math.max(A.clat, num(o.rat)); A.clFr = o.fr || ''; };      // クラッチの板の鳴き（rat）は adv.clRattle → p.chat で既に鳴る。ここは情報として写す
+R.xclu = (o, A) => { A.clat = Math.max(A.clat, num(o.rat)); A.clFr = o.fr || ''; };
+R.mount = (o, A) => { const nm = o.name || '', st = T(RE.mtSolid, nm) ? 1 : T(RE.mtHyd, nm) ? -0.6 : T(RE.mtUre, nm) ? 0.5 : 0.3; A.mount = st; A.nvh += 0.18 * st; };
+R.trans = (o, A) => { if (T(RE.dog, o.name || '')) { A.gearW += 0.8; A.rattle += 0.3; } };
+R.xtrn = (o, A) => { if (T(RE.dog, o.name || '')) { A.gearW += 0.9; A.rattle += 0.3; } else A.gearW += 0.05; };
+R.gearset = (o, A) => { const nm = o.name || ''; if (T(RE.dog, nm)) { A.gearW += 1.0; A.rattle += 0.25; } else if (num(o.gk, 1) < 0.97) A.gearW += 0.25; };      // 近い比のギヤセットは歯が細く、うなりが出やすい
+R.gear = (o, A) => { A.diff += T(RE.quick, o.name || '') ? 0.55 : 0.15; };
+R.lsd = (o, A) => { const nm = o.name || ''; if (/ヘリカル|ATB|Torsen|トルセン|Wavetrac/i.test(nm)) A.diff += 0.04; else if (o.id !== 0) A.diff += 0.12; };
+R.xdif = (o, A) => { A.diff += /ナイン|9 インチ|Strange|Currie|ビレット|ドラッグ|Winters|Quick/i.test(o.name || '') ? 0.6 : 0.2; };
+R.shaft = (o, A) => { if (T(/カーボン/, o.name)) A.hum += 0.2; else if (/アルミ/.test(o.name || '')) A.hum += 0.1; };
+R.prop = (o, A) => { const nm = o.name || ''; if (/2 ピース/.test(nm)) A.hum -= 0.15; else if (/カーボン/.test(nm)) A.hum += 0.22; else if (/アルミ/.test(nm)) A.hum += 0.1; };
+R.xshf = (o, A) => { const nm = o.name || ''; if (/カーボン/.test(nm)) A.hum += 0.22; else if (/アルミ/.test(nm)) A.hum += 0.1; else A.hum += 0.05; };
+R.xaxl = (o, A) => { A.hum += 0.03; };
+R.txswap = (o, A) => { const k = (o.tx && o.tx.kind) || ''; A.txk = k; if (k === 'MT') A.gearW += T(RE.dog, o.name) ? 0.8 : 0.1; else if (k === 'DCT') A.gearW += 0.35; else if (k === 'CVT') A.hum += 0.15; else if (k === 'BIKE' || k === 'HUB') A.hum += 0.1; };
+R.nos = (o, A) => { const nm = o.name || ''; const m = /\+\s*(\d+)\s*馬力/.exec(nm); A.nosHp = Math.max(A.nosHp, m ? +m[1] : /ウェット/.test(nm) ? 120 : 60); A.nosSys = A.nosSys || (/ダイレクト/.test(nm) ? 'dp' : /ウェット/.test(nm) ? 'wet' : 'dry'); if (/プログレッシブ/.test(nm)) A.nosProg = 1; };
+R.xnos = (o, A) => { const x = o.x || {}; A.nosHp = Math.max(A.nosHp, num(x.shot)); A.nosSys = x.sys === 'dp' ? 'dp' : x.sys === 'wet' || x.sys === 'ウェット' ? 'wet' : 'dry'; };
+R.xnct = (o, A) => { if (num((o.x || {}).ctl) >= 2) A.nosProg = 1; };
+R.wastegate = (o, A) => { const nm = o.name || '', sn = o.snd || {}, isWg = /ウエストゲート|ProGate|MV-?[SR]|Gen-?V|PW\d+/i.test(nm) && !/ブローオフ/.test(nm);
+  if (num(sn.wg) || isWg) { A.wgExt = 1; const m = /(\d{2})\s*(mm|\))?/.exec(nm.replace(/ProGate\s*/i, 'ProGate ')); A.wgSz = m && +m[1] >= 30 && +m[1] <= 80 ? +m[1] : /66|60/.test(nm) ? 66 : 44; }
+  if (num(sn.bov) === 2 || T(RE.noBov, nm)) A.bov = 2;
+  else if (!isWg && (num(sn.bov) === 1 || /ブローオフ|SQV|SSQV|Sport Q|TiAL|Forge|リサーキュ/i.test(nm))) { if (/リサーキュ|コンパクト|純正/.test(nm)) A.bovRec = 1; else { A.bov = Math.max(A.bov, 1); A.bovVol = /スーパーサウンド|デュアル サウンド|Sport Q|レースポート|Race ?Port/i.test(nm) ? 1.25 : /SQV|SSQV/.test(nm) ? 0.9 : 1; } } };
+R.cooler = (o, A) => { A.cool = Math.max(A.cool, num(o.pmBoost, 1) - 1); };
+R.xic = (o, A) => { A.cool = Math.max(A.cool, clamp(num((o.x || {}).kg, 8) / 30, 0, 1) * 0.08); };
+R.tire = (o, A) => { const t = o.tyre || {}, nm = o.name || ''; A.tireCls = t.cls || (/スタッドレス/.test(nm) ? 'stud' : /スリック/.test(nm) ? 'slick' : /セミスリック/.test(nm) ? 'semi' : /ハイグリップ/.test(nm) ? 'uhp' : /低燃費|転がり/.test(nm) ? 'eco' : /スポーツ/.test(nm) ? 'sport' : ''); A.tireSnd = num((o.snd || {}).tire); };
+R.xtyr = R.tire;
+R.tirewidth = (o, A) => { A.roadDb += (o.id === 1 ? 0.5 : o.id === 2 ? 1.2 : o.id === 3 ? -0.5 : 0); if (o.id === 1 || o.id === 2) A.hum2 += 0.25 * o.id; };
+R.inch = (o, A) => { const up = o.id === 1 ? 1 : o.id === 3 ? 2.4 : o.id === 2 ? -0.8 : 0; A.roadDb += 0.8 * up; A.hum2 += 0.2 * Math.max(0, up); };      // 扁平になるほど側面が硬く、路面の音が車内へ
+R.xwhl = (o, A) => { const x = o.x || {}; const up = clamp(num(x.d, 17) - 17, -3, 8); A.roadDb += 0.5 * up + 0.12 * Math.max(0, num(x.w, 8.5) - 9); A.hum2 += 0.08 * Math.max(0, up); };      // 大径・扁平ほど側面が硬く路面の音が車内へ。小径（厚い側面）は静か
+R.wheel = (o, A) => { if (/スチール/.test(o.name || '')) A.roadDb -= 0.5; A.roadDb += clamp(0.03 * Math.abs(Math.min(0, num(o.dm))), 0, 0.8); if (/マグネシウム|鍛造/.test(o.name || '')) A.hum2 += 0.05; };      // 軽い合金は共鳴が減衰しにくく、路面の音が車内へ伝わりやすい
+R.pressure = (o, A) => { A.roadDb += o.id === 1 ? 1.0 : o.id === 2 ? -0.6 : 0; };
+R.bush = (o, A) => { const nm = o.name || ''; if (/ゴム/.test(nm)) { A.roadDb -= 0.8; A.thump -= 0.1; } else if (/ピロ/.test(nm)) { A.roadDb += 1.6; A.thump += 0.3; } else { A.roadDb += 0.9; A.thump += 0.15; } };
+R.spring = (o, A) => { const nm = o.name || ''; const hard = /ハイレート|直巻|レース|サーキット|Swift|ID\d|Eibach プロ/i.test(nm) ? 1 : 0.5; if (/エアサス/.test(nm)) return; A.thump += 0.12 * hard; A.roadDb += 0.3 * hard; };
+R.damper = (o, A) => { const nm = o.name || ''; A.thump += /減衰|電子|Öhlins|レース|3 ウェイ|Bilstein|KW|AST/i.test(nm) ? 0.08 : 0.04; };
+R.susp = (o, A) => { A.thump += 0.15 * o.id; A.roadDb += 0.5 * o.id; };
+R.stab = (o, A) => { A.thump += 0.03; }; R.strutbar = (o, A) => { A.thump += 0.04; A.nvh += 0.01; }; R.body = (o, A) => { A.thump += 0.03; A.nvh -= 0.02; };
+R.cage = (o, A) => { A.nvh += 0.14; A.mount += 0.25; A.rattle += 0.05; };
+R.bseat = (o, A) => { A.nvh += 0.07; }; R.harness = (o, A) => { A.nvh += 0.01; }; R.swheel = (o, A) => { A.nvh += 0.005; };
+R.weight = (o, A) => { const dm = Math.abs(Math.min(0, num(o.dm))), nm = o.name || ''; A.nvh += (/内装|軽量化|軽量パーツ|フル|トリム|キット/.test(nm) ? 0.0045 : 0.0012) * dm; };
+R.cabin = (o, A) => { const dm = Math.abs(Math.min(0, num(o.dm))); A.nvh += (T(RE.deaden, o.name) || /内装|トリム|シート/.test(o.name || '') ? 0.0095 : 0.004) * dm; };
+R.panel = (o, A) => { A.nvh += 0.0012 * Math.abs(num(o.dm)); A.thump += 0.01; };
+R.glass = (o, A) => { const nm = o.name || ''; if (T(RE.poly, nm)) A.nvh += /全面/.test(nm) ? 0.45 : 0.25; else if (/ラミネート|防弾/.test(nm)) A.nvh -= 0.4; };
+R.xw_glass = (o, A) => { A.nvh += /全窓/.test(o.name || '') ? 0.45 : 0.25; };
+R.xw_deaf = (o, A) => { A.nvh += /ほぼ撤去|レース/.test(o.name || '') ? 1.15 : 0.65; };
+R.xw_seat = (o, A) => { A.nvh += 0.08; }; R.xw_rseat = (o, A) => { A.nvh += 0.12; }; R.xw_hood = (o, A) => { A.nvh += 0.03; }; R.xw_door = (o, A) => { A.nvh += 0.06; A.thump += 0.02; };
+R.xw_trunk = (o, A) => { A.nvh += 0.04; }; R.xw_fender = (o, A) => { A.nvh += 0.01; }; R.xw_bumper = (o, A) => { A.nvh += 0.01; };
+R.comfort = (o, A) => { const nm = o.name || ''; if (T(RE.quietIns, nm)) A.nvh -= 0.5; else if (/遮音材/.test(nm)) A.nvh += /エアコン/.test(nm) ? 0.8 : 0.55; };
+R.roof = (o, A) => { const nm = o.name || ''; if (/カーボン|FRP/.test(nm)) A.nvh += 0.1; if (T(RE.roofRack, nm)) A.windDb += /Thule/.test(nm) ? 1.5 : 3; else if (/ベンチ/.test(nm)) A.windDb += 0.3; };
+R.rack = (o, A) => { A.windDb += 2.5 + (o.id === 2 ? 1.5 : 0); };
+R.wing = (o, A) => { A.windDb += clamp(1.2 * Math.max(0, num(o.cda, 1) - 1) / 0.03, 0.2, 3.5); };
+R.xwng = (o, A) => { A.windDb += clamp(8 * num((o.x || {}).cdA), 0.3, 4); };
+R.frontlip = (o, A) => { A.windDb += 0.25; }; R.canard = (o, A) => { A.windDb += 0.5 * o.id; }; R.side = (o, A) => { A.windDb += 0.05; };
+R.floor = (o, A) => { A.windDb += /アンダーカバー|フラット/.test(o.name || '') ? -0.5 : 0.15; };
+R.aerokit = (o, A) => { A.windDb += clamp(num(o.cda, 1) - 1, -0.03, 0.03) * 20; };
+R.widebody = (o, A) => { A.windDb += num(o.cda, 1) > 1.02 ? 0.8 : 0.3; };
+R.mirror = (o, A) => { A.windDb -= 0.15; };
+R.pad = (o, A) => { A.padFade = num(o.fade); A.brk += clamp(num(o.fade) / 260, 0, 1.2); };
+R.brake = (o, A) => { A.brkFade = num(o.fade); A.brk += clamp(num(o.fade) / 420, 0, 1) * 0.3; if (T(RE.carbonCer, o.name)) A.cer = 1; };
+R.disc = (o, A) => { if (T(RE.slot, o.name)) { A.whirr += 0.7; A.squeal += 0.1; } if (T(RE.carbonCer, o.name)) A.cer = 1; };
+R.xrtr = (o, A) => { const x = o.x || {}; if (x.rtr === 4) A.cer = 1; if (x.rtr === 2 || x.rtr === 3) A.whirr += 0.4; A.brk += clamp(num(o.fade) / 420, 0, 1) * 0.2; };
+R.xcal = (o, A) => { A.brk += 0.03 * num((o.x || {}).pot); A.squeal -= 0.012 * num((o.x || {}).pot); };      // ピストンが多いほどパッドを均一に押して鳴きにくい
+R.xfan = (o, A) => { A.fan = Math.max(A.fan, num((o.x || {}).fan, 1)); };
+R.radiator = (o, A) => { if (/電動ファン/.test(o.name || '')) A.fan = Math.max(A.fan, 1.3); };
+R.xrad = (o, A) => { A.fan = Math.max(A.fan, 0.9 + 0.1 * num((o.x || {}).rad, 1)); };
+R.xwp = (o, A) => { A.pump += 0.05; };
+R.xalt = (o, A) => { A.mech += clamp((num((o.x || {}).amps, 100) - 100) / 2000, 0, 0.12); };      // 大電流のオルタネーターは冷却ファンと整流の唸りが大きい
+R.xhd = (o, A) => { A.intkDb += clamp(6 * (num((o.x || {}).flow, 1) - 1), 0, 1.2); A.tick += 0.05 * num((o.x || {}).hd); };      // ポートが太いほど流れの音が大きく、大径バルブで動弁系も重い
+R.compression = (o, A) => { A.rasp += 0.04; };      // 圧縮比を変えると燃焼音の質（ざらつき）が少し変わる
+R.chain = (o, A) => { A.roadDb += /金属|亀甲/.test(o.name || '') ? 9 : /ゴム|非金属/.test(o.name || '') ? 5 : 2.5; A.hum2 += 0.2; };      // チェーン: 路面を叩く「ジャラジャラ」
+R.spare = (o, A) => { if (/ランフラット/.test(o.name || '')) { A.roadDb += 1.4; A.hum2 += 0.1; } else A.nvh += 0.03; };      // スペアを降ろすとトランクが共鳴箱になる。ランフラットは側面が硬く路面の音が大きい
+R.brakeduct = (o, A) => { A.windDb += 0.2 * Math.min(2, num(o.id)); };
+R.offroad = (o, A) => { const nm = o.name || ''; if (/スノーケル/.test(nm)) { A.intkDb += 1.0; A.windDb += 0.6; } else if (/リフト/.test(nm)) A.windDb += 1.0; else if (/デフロック/.test(nm)) A.diff += 0.2; else if (/ウインチ|バンパー/.test(nm)) A.windDb += 0.3; };
+R.milarm = (o, A) => { A.nvh -= clamp(0.0016 * num(o.dm), 0, 0.5); };      // 装甲板は質量が大きく、遮音がよい（質量則）
+R.milglass = (o, A) => { A.nvh -= clamp(0.003 * num(o.dm), 0, 0.5); };
+R.milfloor = (o, A) => { A.nvh -= clamp(0.0012 * num(o.dm), 0, 0.4); };
+R.milsys = (o, A) => { A.pump += /消火|NBC|加圧/.test(o.name || '') ? 0.1 : 0; };      // 車内加圧ファンの風の音
+R.miltire = (o, A) => { A.roadDb += 1.2; };
+R.trunk = (o, A) => { if (num(o.dm) < -2) A.nvh += 0.025; }; R.bonnet = (o, A) => { if (num(o.dm) < -2) A.nvh += 0.025; };
+R.oil = (o, A) => { const m = /(\d+)W-(\d+)/.exec(o.name || ''); if (m) { const hot = +m[2], cold = +m[1]; A.mech += clamp(0.1 * (40 - hot) / 20, -0.1, 0.1); A.tick += hot <= 30 ? 0.05 : 0; A.slap += cold >= 15 ? 0.08 : 0; } };      // 粘度: 薄いと動弁系の打音が目立ち、硬いオイルは冷間で油膜が遅れてスラップが出やすい
+R.xblk = (o, A) => { const nm = o.name || ''; A.mech += /ビレット|Billet|アルミ|ドラッグ/i.test(nm) ? 0.15 : /スリーブ|Sleeve/i.test(nm) ? 0.06 : 0.03; };      // ブロックが鋳鉄よりアルミ・ビレットだと機械音が放射されやすい
+/* 過給機・エンジン換装などは、音の素性（合成器の側で決まっている）を写すだけ */
+R.boost = (o, A) => { A.boostId = 1; }; R.xtrb = R.boost; R.xsc = R.boost; R.xtw = (o, A) => { A.twinN = num((o.x || {}).n, 1); };
+
+/* ---- 集計 → 合成器へ渡す値 ---- */
+function derive(ctx, out) {
+  const c = ctx.c, s0 = c.snd || {}, A = blank(); if (c.ev || c.hvm || c.jet || c.plant || c.type === 'ev') A.noEngine = 1;
+  for (const s of ctx.sel) { const f = R[s.key]; if (f) { try { f(s.opt, A, ctx); } catch (e) { /* 1 つの部品の読みちがいで全体を止めない */ } } }
+  const sn = s0, e0 = num(sn.exh) + num(sn.mfL), ink0 = num(sn.intake);
+  const ex = ctx.opt('exhaust'), eM = ex && ex.snd ? num(ex.snd.exh) + num(ex.snd.mfL) : 0;
+  // 出力が大きいほど排気の流量が増えて大きい（同じマフラーなら 2 倍の出力で +3dB 程度）。純正の出力に対して
+  const kw0 = num((ctx.eng || ctx.base || {}).kw, c.kw || 1), kw = num(c.kw, kw0), pwDb = clamp(3.2 * Math.log2(Math.max(0.3, kw / Math.max(1, kw0))), 0, 6.5) * 0.8;
+  const disp = (c.advInfo && c.advInfo.disp && c.advInfo.disp0 ? c.advInfo.disp / c.advInfo.disp0 : 1) * (A.dispX || 1), dispDb = clamp(6 * Math.log10(disp), -1.5, 2.5);
+  // 1) 排気の音量: 合成器の排気レベル e（exh + mfL）は、全開・A特性で約 4.2 dB / 1 の応答をする（検査で実測: e=1 → +4.1, 2 → +8.4）。
+  //    作り込み済みの値（c.snd）を下限にして、物理で足した分（dB）を e に換算して上乗せ。e が大きくなりすぎる分は、音色を変えない純粋な音量（xg）にまわす
+  //    マフラー以外（触媒・ヘッダー・センターパイプ・ウエストゲート）の作り込み済みの値は、実際の消音量（セル数・材質）から求めた dB に置きかえる（100 セルのレース触媒が +8dB にはならない）
+  const KX = 4.2, eT = eM + A.exDb / KX, inc = eT - e0, incP = Math.max(inc, -Math.max(0, num(sn.exh) - num(ex && ex.snd && ex.snd.exh))), room = Math.max(0, 4.6 - e0), incE = incP > 0 ? Math.min(incP, room) : incP, xgDb = incP > 0 ? KX * (incP - incE) : 0;
+  // 2) 吸気: 吸気レベル ink は 1 あたり約 1.7 dB（実測）
+  const KI = 1.7, inkT = A.intkDb / KI, inkInc = clamp(inkT - ink0, 0, Math.max(0, 3 - ink0));
+  // 3) ECU・点火カット
+  const et = A.ecuT, hz = Math.max(A.limHz, et >= 4 ? 28 : et >= 3 ? 22 : et >= 2 ? 16 : 13), limD = A.limD >= 0 ? A.limD : et >= 3 ? 0.02 : et >= 2 ? 0.07 : 0.1, limPop = Math.max(A.limPop, et >= 4 ? 0.5 : et >= 3 ? 0.3 : et >= 2 ? 0.08 : 0);
+  const ecuPop = et >= 3 ? 2 : et >= 2 ? 1 : et >= 1 ? 0.6 : 0;
+  const popL = Math.max(A.popL, ecuPop);      // アフターファイアの出やすさ（0: 出ない / 1: 数発 / 2: 連発）。燃料が排気に流れるのは ECU の減速時の設定・触媒レス・カムの重なり・アンチラグ・アルコール。マフラー自体の出やすさは mfP（作り込み済み）が足される
+  const mfP = A.popL >= 1 || et >= 2 ? clamp(0.25 * A.popL + 0.1 * Math.max(0, et - 1.5), 0, 0.5) : 0;
+  // 4) 音色
+  const hiDb = clamp(A.hiDb + 0.5 * xgDb, -1.5, 5), slopeD = -0.04 * hiDb, lumpD = clamp(0.12 * A.lope - 0.04 * (1 - A.hdK), -0.1, 0.12);
+  // 5) 合成器へ
+  const noEng = !!A.noEngine, z = (v) => (noEng ? 0 : v);
+  const sx = Object.assign({}, NOSX, { nvh: clamp(A.nvh, -0.6, 1.3), mount: clamp(z(A.mount) + 0.0, -0.6, 1.2), mech: z(clamp(A.mech, -0.4, 1.2)), rasp: z(clamp(A.rasp + A.raspX, 0, 1.2)), itb: z(A.itb), xg: z(dbg(xgDb) - 1), pw: z(dbg(pwDb) - 1), cov: z(clamp(A.cov, -0.04, 0.12)),
+    tick: z(clamp(A.tick, 0, 1.4)), slap: z(clamp(A.slap, 0, 0.8)), injT: z(clamp(A.injT, 0, 1)), pump: z(clamp(A.pump, 0, 1)), rattle: z(clamp(A.rattle, 0, 1)), diff: clamp(A.diff, 0, 1), hum: clamp(A.hum, 0, 0.6), gearW: clamp(A.gearW, 0, 1.2),
+    exv: z(A.exv), exvK: A.exvK, limHz: z(hz), limD: z(limD), limPop: z(limPop), popL: noEng ? -1 : popL, nosK: A.nosHp > 0 ? clamp(0.3 + 0.7 * Math.log2(1 + A.nosHp / 75) / 2, 0.3, 1.6) * (A.nosSys === 'dp' ? 1.35 : A.nosSys === 'wet' ? 0.9 : 1) : 0, nosP: A.nosProg });
+  const inLen = clamp(0.32 * (1 - 1.4 * A.inRun) * (A.plenum ? 1.08 : 1), 0.18, 0.46);
+  const prof = { hdK: A.hdK, pipeK: A.pipeK * (1 + 0.04 * A.catDel), gD: clamp(A.gD + 0.05 * A.catDel + 0.03 * Math.max(0, hiDb) / 3, -0.1, 0.18), slopeD, lumpD, volK: dbg(dispDb), exK: 1, intkK: 1, formK: Math.pow(Math.max(0.5, 1 / disp), 0.12), decD: clamp(0.01 * A.lope, 0, 0.02), inLen };
+  const snd = { exh: incE, mfD: clamp(A.drone, 0, 0.6), mfP, mfR: clamp(0.5 * A.rasp, 0, 0.5), intake: inkInc, als: A.als };
+  // 6) 過給機まわり
+  const tbx = { wgExt: A.wgExt, wgSz: A.wgSz, bov: A.bov, bovVol: A.bovVol || 1, bovRec: A.bovRec || 0, lvK: clamp(1 - 1.2 * Math.max(0, A.cool), 0.88, 1), durK: 1 + 2 * Math.max(0, A.cool), hissK: 1 + (A.pipe ? 0.1 : 0), twinN: A.twinN || 0 };
+  // 7) 車体・路面・タイヤ
+  const tc = A.tireCls, tireDb = { eco: -1.5, sum: 0, sport: 0.6, uhp: 1.0, hyper: 1.6, semi: 2.5, slick: 3.5, at: 2.0, mt: 4.0, stud: 3.0, winter: 0.5, rain: 0.5, lsr: 0.5, all: 0.5, van: 1.0, inter: 1.5, wet: 1.5, ev: -1.0 }[tc] || 0;
+  const authDb = gdb(1 + 1.2 * num(A.tireSnd)), tireInc = Math.max(0, tireDb - authDb), roadDb = A.roadDb + tireInc, nvhDb = 5.2 * A.nvh;
+  const mkEnv = (inside) => ({ q: inside ? dbg(nvhDb) : 1, wind: dbg(A.windDb), road: dbg(roadDb + (inside ? nvhDb : 0)), tire: dbg(tireInc), tireHz: 20 * tireInc, thump: 1 + clamp(A.thump, -0.3, 1.2) * (inside ? 1.5 : 0.6) + (inside ? 0.18 * A.nvh : 0), hum: clamp(A.hum2 + 0.1 * Math.max(0, tireDb), 0, 1) });
+  const hardPad = clamp(num(A.padFade) / 260, 0, 1.2) + 0.25 * clamp(num(A.brkFade) / 420, 0, 1), cer = A.cer ? 0.35 : 1;
+  const brk = { squeal: clamp((0.6 * hardPad + A.squeal) * cer, 0, 1), grind: clamp(0.85 * Math.pow(Math.max(0, hardPad), 1.4) * (A.cer ? 0.5 : 1), 0, 1), whirr: clamp(A.whirr, 0, 1) };
+  const env = { out: mkEnv(false), in: mkEnv(true), brk, fan: A.fan > 0 ? clamp(0.6 + 0.5 * A.fan, 0.6, 1.6) : 1, nvhDb, roadDb, tireDb };
+  // 8) 見える炎（rl_fx が使う）: 抜けている・触媒レス・ECU が攻めている・アンチラグ・アルコール
+  const flame = A.popL || et >= 2 || A.als || A.catDel || A.alc || A.launch ? clamp(0.12 + 0.3 * popL + 0.25 * A.catDel + 0.3 * A.als + 0.25 * A.alc + 0.15 * (e0 + incE) / 4 + 0.2 * A.launch, 0, 1.5) : 0;
+  const stock = !ctx.sel.length;
+  // 実際に鳴る値（作り込み済み c.snd + 上乗せ）。排気・ECU・タイヤなど、作り込み済みの値が音を決めている部品もここに写る
+  const eff = {}; for (const k of ['exh', 'mfL', 'mfA', 'mfB', 'mfD', 'mfM', 'mfP', 'mfR', 'intake', 'ecu', 'tire', 'bov', 'wg', 'als']) eff[k] = +(num(s0[k]) + num(snd[k])).toFixed(3);
+  // 過給機の音（笛の高さ・大きさ・ウエストゲート・ブローオフ）。turboSound() が部品から決めたものを写す（再帰しないよう、写している間は RLS.tb を素通しにする）
+  let tbi = null; if (c.boostCfg && HW.turboSound) { RLS._der = (RLS._der || 0) + 1; try { const t = HW.turboSound(c); if (t) { tbi = {}; for (const k in t) { const v = t[k]; if (typeof v === 'number' && isFinite(v)) tbi[k] = +v.toFixed(3); else if (typeof v === 'boolean') tbi[k] = v ? 1 : 0; } tbi.bar = +num(c.boostCfg.peakBar).toFixed(3); } } catch (e) { /* なし */ } RLS._der--; }
+  const em = c.ev || (c.hyb && c.hyb.ev) || null, jt = c.jet || null;
+  out.snd = { stock, prof, snd, sx, tb: tbx, env, flame, eff, tbInfo: tbi, info: { cyl: num(s0.cyl), boost: c.boostCfg ? 1 : 0, txk: A.txk, twin: A.twinN || 0, nos: A.nosHp, itb: A.itb, ecuT: et, popL, clRat: A.clat, clFr: A.clFr || '', lump: num(s0.lump), slope: num(s0.slope), vol: num(s0.vol), pipe: num(s0.pipe), muff: num(s0.muff), mPoles: em ? num(em.poles) : 0, mInv: em ? String(em.inv || '') : '', mCh: em ? String(em.ch || '') : '', jetF0: jt ? num(jt.f0) : 0, jetKind: jt ? String(jt.kind || '') : '', jetBig: jt && jt.big ? 1 : 0 },
+    db: { exhaust: KX * (e0 + incE) + xgDb, e0, incE, xgDb, pwDb, dispDb, intake: KI * (ink0 + inkInc), road: Math.max(tireDb, authDb) + A.roadDb, nvh: nvhDb, wind: A.windDb, hi: hiDb } };
+  Object.defineProperty(out.snd, 'A', { value: A, enumerable: false });      // 集計の途中の値（検査・カード用。差分の検査には出さない）
+  out.snd.card = card(ctx, out.snd, A);
+  return out.snd;
+}
+
+/* ---- ガレージの「音」の欄（5〜8 行）。label / txt / good(+1 良い・0 ふつう・−1 悪い) ---- */
+function card(ctx, S, A) {
+  const rows = [], PR = { '音量': 10, '車内': 8, '触媒': 8, 'ナイトロ': 8, 'アフターファイア': 7, '排気バルブ': 7, '吸気音': 7, 'アイドル': 7, '音色': 6, 'リミッター': 6, 'ブレーキ': 6, 'ウエストゲート': 6, 'ブローオフ': 6, '駆動系': 6, '機械音': 6, 'ロードノイズ': 5, '風切り音': 5, 'ギヤのカラカラ': 4, '冷却ファン': 3 };
+  const add = (label, txt, good) => rows.push({ label, txt, good: good || 0 }), D = S.db, sx = S.sx, f1 = (v) => (v >= 0 ? '+' : '') + v.toFixed(1);
+  if (S.stock) return rows;
+  const tot = D.exhaust + D.pwDb;
+  add('音量', f1(tot) + ' dB' + (tot > 7 ? '（近所迷惑）' : tot > 3 ? '（太く大きい）' : tot > 0.7 ? '（少し大きい）' : '（ほぼ純正）'), tot > 8 ? -1 : 0);
+  const hi = D.hi; if (Math.abs(hi) > 0.6 || A.rasp > 0.2 || A.drone > 0.15) add('音色', (hi > 2.5 ? '甲高く硬い' : hi > 0.8 ? '張りのある' : hi < -0.6 ? 'やわらかい' : 'ふつう') + (A.rasp > 0.3 ? '・ざらつく' : '') + (A.drone > 0.2 ? '・こもる低音' : ''), A.drone > 0.3 ? -1 : 0);
+  if (sx.exv) add('排気バルブ', '閉じると静か（約 ' + Math.min(10, Math.round(4.2 * (D.e0 + D.incE) * (1 - sx.exvK) * 1.5)) + ' dB 低い）', 1);
+  if (A.catDel) add('触媒', '無し: +4.5 dB・パパン出やすい（車検不可）', -1); else if (ctx.has('catalyst') && A.exDb > 0.3) add('触媒', '低背圧: +' + (cat(400) - cat(cellsOf(ctx.name('catalyst')))).toFixed(1) + ' dB・硬い音', 0);
+  if (D.intake > 0.8) add('吸気音', f1(D.intake) + ' dB' + (A.itb ? '（ITB で鋭く吠える）' : '（吸気の唸り）'), 0);
+  if (sx.limHz > 14) add('リミッター', '点火カット ' + Math.round(sx.limHz) + ' Hz' + (sx.limPop > 0.1 ? '・バンバン' : ''), 0);
+  if (sx.popL >= 1 || S.snd.mfP > 0.1) add('アフターファイア', sx.popL >= 2 || S.flame > 0.7 ? '派手（炎・連続）' : '出る（少し）', 0);
+  if (A.lope > 0.2) add('アイドル', 'ドロドロ（不整' + Math.round(A.lope * 100) + '%）', -1); else if (A.lope > 0.08) add('アイドル', 'やや不安定', 0); else if (sx.cov < -0.01) add('アイドル', 'なめらか', 1);
+  if (sx.rattle > 0.1) add('ギヤのカラカラ', 'アイドルで目立つ', -1);
+  const mech = []; if (sx.tick > 0.25) mech.push('バルブの打音'); if (sx.slap > 0.1) mech.push('冷間ピストンスラップ'); if (sx.injT > 0.15) mech.push('インジェクターのカチカチ'); if (sx.pump > 0.2) mech.push('燃料ポンプの唸り'); if (mech.length) add('機械音', mech.slice(0, 2).join('・'), -1);
+  if (sx.gearW > 0.3 || sx.diff > 0.25 || sx.hum > 0.2) add('駆動系', (sx.gearW > 0.3 ? 'ギヤの唸り' : '') + (sx.diff > 0.25 ? (sx.gearW > 0.3 ? '・' : '') + 'デフの唸り' : '') + (sx.hum > 0.2 ? '・シャフトの唸り' : ''), -1);
+  if (sx.nvh > 0.15 || sx.mount > 0.3) add('車内', f1(S.env.nvhDb + 3.2 * Math.max(0, sx.mount)) + ' dB（' + (sx.mount > 0.4 ? 'エンジンの振動がこもる・' : '') + (sx.nvh > 0.15 ? '遮音が薄い' : '') + '）', -1); else if (sx.nvh < -0.15) add('車内', f1(S.env.nvhDb) + ' dB（静か）', 1);
+  if (D.road > 0.8 || D.road < -0.8) add('ロードノイズ', f1(D.road) + ' dB', D.road > 0 ? -1 : 1);
+  if (D.wind > 0.8) add('風切り音', f1(D.wind) + ' dB', -1);
+  if (S.env.brk.squeal > 0.25 || S.env.brk.grind > 0.2) add('ブレーキ', '冷間でキーキー・ゴリゴリ', -1); else if (S.env.brk.whirr > 0.3) add('ブレーキ', 'スリット溝の「ウォーン」', 0);
+  if (S.tb.wgExt) add('ウエストゲート', '外排気: 「シャッ」と大きく抜ける', 0); if (S.tb.bov === 1) add('ブローオフ', '大気開放: 「プシュー」', 0); else if (S.tb.bov === 2) add('ブローオフ', '無し: コンプレッサーのサージ音', -1);
+  if (A.nosHp > 0) add('ナイトロ', '噴射のヒス音・ソレノイドの作動音', 0);
+  if (A.fan > 1.1) add('冷却ファン', '大風量: 水温が上がると唸る', 0);
+  if (rows.length <= 8) return rows;
+  const keep = new Set(rows.map((r, i) => [i, PR[r.label] || 1]).sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, 8).map((v) => v[0]));      // 多いときは目立つものを 8 行まで（並びは元のまま）
+  return rows.filter((r, i) => keep.has(i));
+}
+
+RL.mod('sound', (ctx, out) => { derive(ctx, out); });
+
+/* ======================= 合成器・オーディオへの受け渡し ======================= */
+/* 合成器の音の素性（prof）を、部品ぶんだけ作り直す。同じ素性は 1 回だけ作ってキャッシュ */
+RLS.profFor = function (c, base) {
+  const S = RL.of(c).snd; if (!S || S.stock || !base) return base; const P = S.prof; let m = S._pc; if (!m) { m = new Map(); Object.defineProperty(S, '_pc', { value: m, enumerable: false }); }
+  let r = m.get(base); if (r) return r; r = Object.assign({}, base);
+  if (r.hd) r.hd = r.hd.map((v) => v * P.hdK); if (r.pipe) r.pipe *= P.pipeK; if (r.g !== undefined) r.g = clamp(r.g + P.gD, 0.2, 0.85); if (r.slope !== undefined) r.slope += P.slopeD; if (r.lump !== undefined) r.lump = clamp(r.lump + P.lumpD, 0, 1);
+  if (r.vol) r.vol *= P.volK; if (r.form) r.form = r.form.map((f) => [f[0] * P.formK, f[1], f[2]]); if (r.dec !== undefined) r.dec = clamp(r.dec + P.decD, 0.6, 0.97); r.inLen = P.inLen; r.rlMod = 1;
+  m.set(base, r); return r; };
+/* c.snd に部品ぶんを足した版（1 回だけ作る） */
+RLS.sndFor = function (c) {
+  const S = RL.of(c).snd; if (!S || S.stock) return c.snd; let r = S._sn; if (r) return r; r = Object.assign({}, c.snd);
+  for (const k in S.snd) if (typeof S.snd[k] === 'number') r[k] = (r[k] || 0) + S.snd[k];
+  Object.defineProperty(S, '_sn', { value: r, enumerable: false }); return r; };
+/* turboSound() が作った t（過給機の音）に、ウエストゲート・ブローオフ・インタークーラーの違いを反映 */
+RLS.tb = function (c, t) {
+  if (RLS._der) return t;      // c.rl.snd を作っている最中（再帰しない）
+  const S = RL.of(c).snd; if (!S || S.stock || !t || t.sc) return t; const X = S.tb, sn = c.snd || {};
+  if (X.wgExt && !(t.wg > 0.3)) t.wg = (t.wg || 0) + 0.45 + 0.012 * clamp(X.wgSz - 38, 0, 40);      // 外へ抜く弁は大きいほど荒い音
+  else if (X.wgExt && X.wgSz > 46) t.wg *= 1 + 0.01 * (X.wgSz - 46);
+  if (X.bov === 1 && !sn.bov) { t.bov = Math.max(t.bov, 0.6) * 1.35 * X.bovVol; t.flut *= 0.3; t.recirc = false; t.fc *= 1.1; }
+  else if (X.bovRec && !sn.bov) { t.recirc = true; t.bov = Math.max(t.bov, 0.4); }      // 戻し式のバルブ: 吸気に戻すので静かで「フシュッ」と短い
+  else if (X.bov === 2 && !sn.bov) { t.flut = Math.max(t.flut, 0.75) * 1.2; t.bov *= 0.25; t.recirc = false; }
+  t.lv *= X.lvK; if (t.dur) t.dur *= X.durK; if (t.hiss) t.hiss *= X.hissK; return t; };
+/* 合成器へ渡す（audioUpdate のあと毎フレーム。重い計算はしない） */
+RLS.apply = function (p, c) {
+  const S = RL.of(c).snd; if (!S) return null; const eng = !p.motor && !p.jetC;
+  if (S.stock || !eng) { p.sx = null; return S; }
+  if (p.prof) p.prof = RLS.profFor(c, p.prof);      // 型式ごとの音（sndTyped）を済ませたあとの素性に、部品ぶんを掛ける
+  if (p.snd === c.snd) p.snd = RLS.sndFor(c);
+  p.sx = S.sx; return S; };
+/* 走行の状態（水温・速度・ナイトロ）から、合成器に渡す動的な値を決める。st = { drive, wT, sp, nosOn, nosRamp } */
+RLS.dyn = function (p, c, st, s) {
+  const S = RL.of(c).snd; p.cold = 0; p.nos = 0; p.nosP = 0; p.dfW = 0; p.hmW = 0;
+  if (!S || S.stock || !p.sx) return S;
+  const sx = S.sx, A = S.A, drive = !!st.drive, sp = drive ? Math.abs(st.sp || 0) : 0, load = clamp(p.load || 0, 0, 1);
+  if (A.lope > 0) p.rough = Math.max(p.rough || 0, clamp(A.lope, 0, 1));      // アイドルの不整: ガレージのオーバーラップ・エンジン担当の adv.rough（カム・プラグ・ITB など）があればそれと比べて大きい方（二重に足さない）
+  p.cold = drive && st.wT !== undefined ? clamp((75 - st.wT) / 45, 0, 1) : 0;      // 冷間: ピストンスラップは暖まると消える
+  const on = !!(st.nosOn && drive); p.nos = sx.nosK > 0 && on ? clamp(st.nosRamp === undefined ? 1 : st.nosRamp, 0, 1) : 0; p.nosP = sx.nosP;
+  if (s && on !== !!s.rlNosOn) { s.rlNosOn = on; if (sx.nosK > 0 && s.rls) s.rls.nsClk = 1; }      // ソレノイドの「カチッ」
+  // 駆動系の唸り: デフ（ピニオン 11 枚が噛む周波数）・シャフト（ユニバーサルジョイントが 1 回転に 2 回）
+  const wr = sp / Math.max(0.2, c.wheelR || 0.32) / 6.2832, fin = c.final || 3.5;
+  p.dfW = sx.diff > 0 && sp > 1 ? sx.diff * 0.022 * (0.3 + 0.7 * load) * Math.min(1, sp / 12) : 0; p.dfF = wr * fin * 11;
+  p.hmW = sx.hum > 0 && sp > 1 ? sx.hum * 0.01 * (0.25 + 0.75 * load) * Math.min(1, sp / 15) : 0; p.hmF = wr * fin * 2;
+  if (sx.gearW > 0 && drive && p.whine !== undefined) { const w0 = 0.004 * (0.3 + 0.7 * load) * Math.min(1, sp / 20); p.whine = Math.max(p.whine, sp > 1 ? w0 * (1 + 5.5 * sx.gearW) : 0); }      // ドグ・直歯ギヤの唸り
+  return S; };
+/* 毎フレーム（audioUpdate のあと） */
+RLS.post = function (game, dt) {
+  const s = game.synth; if (!s) return; const c = game.spec; if (!c) return; const p = s.p, S = RL.of(c).snd; if (!S) { p.sx = null; return; }
+  const drive = game.mode === 'drive', P = game.P || {}, pt = game.pt || {}, nos = pt.xs && pt.xs.nos;
+  RLS.apply(p, c);
+  RLS.dyn(p, c, { drive, wT: P.wT, sp: P.v, nosOn: !!(nos && nos.on && nos.lb > 0.02), nosRamp: nos ? nos.ramp : 1 }, s);
+  // 追加のノード: ブレーキ鳴き・冷却ファン・タイヤの空洞共鳴（どの車でも鳴る。部品がなければブレーキ鳴きなどは 0）
+  const AC = game.AC; if (!AC) return; const t = AC.currentTime, E = S.env, brk = E.brk, sp = drive ? Math.abs(P.v || 0) : 0, bs = drive ? clamp(P.brk || 0, 0, 1) : 0, bT = drive && P.bT !== undefined ? P.bT : 60, wT = drive && P.wT !== undefined ? P.wT : 60, cold = 1 - ss(110, 280, bT);
+  const sqE = bs > 0.04 ? ss(0.04, 0.2, bs) * (1 - ss(0.55, 0.95, bs)) * (1 - ss(9, 24, sp)) * (sp > 0.6 ? 1 : 0) : 0, grE = bs > 0.1 ? ss(0.1, 0.5, bs) * ss(0.4, 3, sp) * (1 - 0.6 * ss(16, 40, sp)) : 0, whE = bs > 0.05 ? ss(0.05, 0.3, bs) * ss(8, 25, sp) : 0;
+  const inside = drive && game.camMode === 2, ST = (n, v, tc) => { if (n && n.g && isFinite(v)) n.g.gain.setTargetAtTime(v, t, tc); }, SF = (n, v, tc) => { if (n && n.f && isFinite(v)) n.f.frequency.setTargetAtTime(v, t, tc); };
+  ST(game.rlBS, brk.squeal * cold * sqE * 0.05 * (inside ? 0.55 : 1) * (1 + 0.15 * Math.sin(t * 31)), 0.05); SF(game.rlBS, 2600 + 1500 * brk.squeal + 500 * Math.sin(t * 1.7) - 14 * Math.min(sp, 12), 0.1);      // 冷えた競技用パッドの鳴き: 低速で軽く踏んだとき
+  ST(game.rlBG, brk.grind * cold * grE * 0.1 * (inside ? 0.7 : 1), 0.06);      // 冷間のゴリゴリ
+  ST(game.rlBW, brk.whirr * whE * 0.06, 0.08); SF(game.rlBW, 5200 + 90 * sp, 0.2);      // スリット・ドリルのローターが回る「ウォーン」
+  const hot = ss(94, 103, wT), fanG = drive ? hot * (0.016 + 0.014 * E.fan) * E.fan * (inside ? 0.45 : 1) * (1 - 0.5 * ss(10, 24, sp)) : 0; ST(game.rlFan, fanG, 0.4); SF(game.rlFan, 360 + 220 * hot + 60 * E.fan, 0.5);      // 電動ファン（水温が上がると回る）
+  const tH = drive ? clamp(sp / 28, 0, 1) * 0.055 * E.out.hum * (inside ? 1.3 : 0.15) : 0; ST(game.rlTH, tH, 0.2); SF(game.rlTH, 205 + 18 * Math.min(1, sp / 40) + 12 * Math.sin(t * 0.37), 0.4);      // タイヤの空洞共鳴
+  const RSd = HW.RealSnd; if (RSd && RSd.bus && RSd.bus.gain) RSd.bus.gain.setTargetAtTime(S.stock ? 1 : dbg(clamp(0.5 * (S.db.exhaust + S.db.pwDb) + (inside ? S.env.nvhDb : 0), -6, 9)), t, 0.2);      // 実音（録音）も、部品の分だけ大きさを変える（録音は純正の音として扱う。録音そのものには手を入れない）
+};
+/* audioUpdate の風・路面・タイヤの音に掛ける倍率（部品ごとに 1 回だけ作ってある） */
+RLS.env = function (c, inside) { const S = RL.of(c).snd; return S && !S.stock ? (inside ? S.env.in : S.env.out) : NOK; };
+/* 外側のラッパー: audioUpdate のあとで呼ぶ */
+if (HW.Game && HW.Game.prototype && HW.Game.prototype.audioUpdate) { const G = HW.Game.prototype, au = G.audioUpdate;
+  G.audioUpdate = function (dt) { const r = au.apply(this, arguments); try { RLS.post(this, dt); } catch (e) { if (g.console && !RLS._warned) { RLS._warned = 1; console.warn('RLS ' + (e && e.stack || e)); } } return r; }; }
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* ----- 起動 ----- */
