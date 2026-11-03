@@ -1,0 +1,151 @@
+== 1. 気筒サイクル（実機の典型値）
+arch   case                    MAP(kPa)  pPeak(bar)  pEVO(bar)  Tevo(K)  back-pressure(kPa)  判定
+i4     アイドル 800rpm 全閉              38         12        1.5     1417            0.0          OK
+i4     部分負荷 3000rpm 25%            59         32        2.6     1460            0.6          OK
+i4     全開 3000rpm                 100         51        4.6     1504            2.1          OK
+i4     全開 6500rpm                  97         76        5.3     1476           10.8          OK
+i6     アイドル 800rpm 全閉              40         13        1.5     1439            0.0          OK
+i6     部分負荷 3000rpm 25%            60         33        2.6     1494            0.5          OK
+i6     全開 3000rpm                 100         52        4.6     1544            1.7          OK
+i6     全開 6500rpm                  97         80        5.5     1497           10.2          OK
+v8x    アイドル 800rpm 全閉              40         13        1.5     1380            0.0          OK
+v8x    部分負荷 3000rpm 25%            60         34        2.7     1495            0.8          OK
+v8x    全開 3000rpm                 100         53        4.6     1562            2.1          OK
+v8x    全開 6500rpm                  97         79        5.4     1475            9.9          OK
+v12    アイドル 800rpm 全閉              40         13        1.5     1404            0.0          OK
+v12    部分負荷 3000rpm 25%            60         33        2.6     1465            0.5          OK
+v12    全開 3000rpm                 100         51        4.5     1532            1.4          OK
+v12    全開 6500rpm                  97         80        5.5     1496           10.1          OK
+CYCLE ALL OK
+== 2. 部品・条件の効き方
+--- 期待する向き ---
+OK  触媒レス: 1-4kHz が上がる (+ 3.9 dB)
+OK  ストレートマフラー: 全体と高域が上がる (+ 6.3 / + 6.0 dB)
+OK  直管: 高域が最も大きい
+OK  テールが長い: 管の共鳴が動き、音色が変わる (重心 408 → 465 Hz)
+OK  ヘッダー（長さ・集合）で脈動が変わる (mid 0.4  low -2.2 dB)
+OK  タービンが排気に入る: 高域が落ちて丸くなる ( -3.2 dB)
+OK  過給 1bar: 燃焼圧が上がり排気が大きい (+ 5.8 dB)
+OK  スロットル 25%: 小さい ( -6.4 dB)
+OK  スロットル全閉は更に小さい ( -8.5 dB)
+OK  回転で音量が連続的に変わる (2000rpm -9.5 / 6500rpm + 2.2 dB)
+EFFECTS ALL OK
+== 3. 長時間の不規則な運転での安定性（9 配列 × 90 秒）
+i3 OK  bad 0 max|ex| 1.17e+4 max|blk| 9.40e+4 minPman kPa 12 maxT 3205 time 2.2s for 90s
+i4 OK  bad 0 max|ex| 1.19e+4 max|blk| 9.61e+4 minPman kPa 12 maxT 3185 time 2.5s for 90s
+b4 OK  bad 0 max|ex| 2.75e+4 max|blk| 9.61e+4 minPman kPa 12 maxT 3424 time 3.1s for 90s
+i6 OK  bad 0 max|ex| 1.20e+4 max|blk| 1.89e+5 minPman kPa 12 maxT 3358 time 3.8s for 90s
+v6o OK  bad 0 max|ex| 1.94e+4 max|blk| 2.18e+5 minPman kPa 12 maxT 3600 time 3.8s for 90s
+v8x OK  bad 0 max|ex| 1.02e+4 max|blk| 2.79e+5 minPman kPa 12 maxT 3131 time 6.7s for 90s
+v8f OK  bad 0 max|ex| 2.18e+4 max|blk| 2.79e+5 minPman kPa 12 maxT 3142 time 5.6s for 90s
+v10 OK  bad 0 max|ex| 1.79e+4 max|blk| 3.67e+5 minPman kPa 12 maxT 3225 time 5.3s for 90s
+v12 OK  bad 0 max|ex| 3.41e+4 max|blk| 4.53e+5 minPman kPa 12 maxT 3252 time 5.9s for 90s
+STRESS ALL OK
+== 4. 点火順序（次数スペクトル）
+i3   基本の次数 1.5  上位 3 つ [4.5, 1.5, 3.0]  OK
+i4   基本の次数 2  上位 3 つ [4.0, 14.0, 2.0]  OK
+b4   基本の次数 2  上位 3 つ [4.0, 5.0, 14.0]  OK
+i5   基本の次数 2.5  上位 3 つ [5.0, 15.0, 12.5]  OK
+i6   基本の次数 3  上位 3 つ [18.0, 3.0, 15.0]  OK
+v6   基本の次数 3  上位 3 つ [18.0, 9.0, 12.0]  OK
+v6o  基本の次数 1.5  上位 3 つ [4.5, 13.5, 1.5]  OK
+v8x  基本の次数 4  上位 3 つ [4.0, 14.0, 5.0]  OK
+v8f  基本の次数 4  上位 3 つ [4.0, 12.0, 16.0]  OK
+v10  基本の次数 5  上位 3 つ [5.0, 15.0, 10.0]  OK
+v12  基本の次数 6  上位 3 つ [18.0, 12.0, 6.0]  OK
+== 5. ゲームの合成器（物理モデル）: 12 配列の掃引・アイドルを出力し、クリック・音切れ・ブロック境界・ループを検査
+24
+M_c2_ae86_i4_idle.wav            spikes 0 dropouts 0 blockedge 1.0 loop 0.60 OK
+M_c2_ae86_i4_sweep.wav           spikes 0 dropouts 0 blockedge 1.0 loop 0.03 OK
+M_c2_countach21_v12_idle.wav     spikes 0 dropouts 0 blockedge 1.1 loop 0.68 OK
+M_c2_countach21_v12_sweep.wav    spikes 0 dropouts 0 blockedge 1.0 loop 0.02 OK
+M_c2_f458_v8f_idle.wav           spikes 0 dropouts 0 blockedge 1.1 loop 0.66 OK
+M_c2_f458_v8f_sweep.wav          spikes 0 dropouts 0 blockedge 1.1 loop 0.04 OK
+M_c2_gt3rs991_b6_idle.wav        spikes 0 dropouts 0 blockedge 1.2 loop 0.45 OK
+M_c2_gt3rs991_b6_sweep.wav       spikes 0 dropouts 0 blockedge 1.3 loop 0.02 OK
+M_c2_lfa_v10_idle.wav            spikes 0 dropouts 0 blockedge 1.1 loop 0.71 OK
+M_c2_lfa_v10_sweep.wav           spikes 0 dropouts 0 blockedge 1.2 loop 0.03 OK
+M_c2_z34_v6_idle.wav             spikes 0 dropouts 0 blockedge 1.1 loop 0.51 OK
+M_c2_z34_v6_sweep.wav            spikes 0 dropouts 0 blockedge 1.0 loop 0.02 OK
+M_gr86_b4_idle.wav               spikes 0 dropouts 0 blockedge 0.9 loop 0.58 OK
+M_gr86_b4_sweep.wav              spikes 0 dropouts 0 blockedge 1.1 loop 0.07 OK
+M_k20a_i4_idle.wav               spikes 0 dropouts 0 blockedge 1.1 loop 0.70 OK
+M_k20a_i4_sweep.wav              spikes 0 dropouts 0 blockedge 1.5 loop 0.04 OK
+M_ls3_v8x_idle.wav               spikes 0 dropouts 0 blockedge 1.0 loop 0.63 OK
+M_ls3_v8x_sweep.wav              spikes 0 dropouts 0 blockedge 1.3 loop 0.06 OK
+M_nsx_v6o_idle.wav               spikes 0 dropouts 0 blockedge 1.1 loop 0.29 OK
+M_nsx_v6o_sweep.wav              spikes 0 dropouts 0 blockedge 1.2 loop 0.06 OK
+M_rx7_rot_idle.wav               spikes 0 dropouts 0 blockedge 0.9 loop 0.47 OK
+M_rx7_rot_sweep.wav              spikes 0 dropouts 0 blockedge 1.7 loop 0.02 OK
+M_supra_i6_idle.wav              spikes 0 dropouts 0 blockedge 1.1 loop 0.48 OK
+M_supra_i6_sweep.wav             spikes 0 dropouts 0 blockedge 1.4 loop 0.03 OK
+QA ALL OK
+== 6. 基準（engine-sim の同条件の音）との比較
+engine    scn      | band levels re total (dB): ref | mine  [low  mid  high  air]      | RMS band diff 60-6k
+i4_vtec   wot3000  |   -3.3   -2.7  -31.0  -42.7 |  -14.2   -0.3  -15.9  -26.3 |  16.0 dB
+i4_vtec   part25   |   -3.4   -2.7  -31.7  -43.0 |  -14.0   -0.4  -14.5  -28.1 |  16.5 dB
+i4_vtec   idle     |   -0.2  -14.6  -45.2  -51.7 |   -1.6   -6.1  -13.3  -20.3 |  23.6 dB
+i4_vtec   wot80    |   -4.5   -1.9  -24.2  -39.4 |  -24.8   -0.7   -8.6  -20.6 |  15.4 dB
+i6_2jz    wot3000  |   -0.0  -20.3  -37.0  -52.1 |   -0.3  -15.1  -15.5  -22.0 |  20.7 dB
+i6_2jz    part25   |   -0.0  -20.6  -36.8  -52.3 |   -2.3   -4.0  -22.0  -30.0 |  17.8 dB
+i6_2jz    idle     |   -0.4  -10.7  -37.4  -48.2 |   -2.1   -4.6  -15.6  -40.1 |  16.4 dB
+i6_2jz    wot80    |   -8.9   -0.7  -18.8  -33.0 |  -19.9   -0.6  -10.0  -18.5 |  12.4 dB
+v6_60     wot3000  |   -0.0  -26.3  -41.7  -46.7 |   -0.8  -10.1  -12.1  -22.2 |  23.2 dB
+v6_60     part25   |   -0.0  -22.2  -40.9  -45.8 |   -0.6   -9.2  -19.1  -29.5 |  16.8 dB
+v6_60     idle     |   -0.4  -11.2  -26.2  -38.6 |   -0.8   -7.7  -25.6  -42.9 |   7.3 dB
+v6_60     wot80    |   -4.2   -2.1  -32.4  -33.6 |  -27.1   -0.6   -9.1  -22.7 |  15.7 dB
+v6_odd    wot3000  |   -0.1  -19.4  -39.7  -43.5 |   -9.1   -1.0  -11.4  -24.5 |  21.5 dB
+v6_odd    part25   |   -0.1  -18.6  -40.3  -42.9 |   -3.4   -2.8  -18.6  -30.9 |  17.5 dB
+v6_odd    idle     |   -0.4  -10.4  -30.2  -39.0 |   -0.9   -7.3  -21.5  -39.7 |  11.2 dB
+v6_odd    wot80    |   -0.6   -9.0  -38.0  -40.3 |  -21.6   -0.5  -10.7  -20.6 |  20.0 dB
+v8_ls     wot3000  |  -16.7   -0.1  -22.7  -33.7 |  -29.1   -0.1  -20.5  -28.3 |  11.2 dB
+v8_ls     part25   |  -15.3   -0.1  -24.2  -32.7 |  -26.8   -0.0  -21.3  -33.8 |  10.7 dB
+v8_ls     idle     |   -4.4   -2.0  -24.1  -30.5 |   -2.5   -3.6  -21.7  -42.7 |   8.7 dB
+v8_ls     wot80    |  -19.3   -0.1  -21.7  -32.5 |  -15.8   -2.7   -3.8  -17.0 |  16.2 dB
+v8_f136   wot3000  |   -8.5   -0.7  -27.3  -44.8 |  -31.3   -0.1  -16.5  -24.7 |  16.8 dB
+v8_f136   part25   |  -10.8   -0.4  -32.6  -45.1 |  -37.3   -0.1  -15.3  -31.8 |  16.9 dB
+v8_f136   idle     |   -0.2  -12.6  -37.1  -53.5 |   -3.8   -2.5  -17.4  -32.2 |  17.8 dB
+v8_f136   wot80    |   -6.9   -1.1  -16.2  -38.3 |  -31.5   -2.3   -3.8  -23.6 |  15.2 dB
+v10_lfa   wot3000  |   -5.1   -1.6  -29.7  -41.6 |  -36.9   -3.5   -2.7  -18.6 |  23.6 dB
+v10_lfa   part25   |   -7.3   -0.9  -26.2  -40.5 |  -38.3   -3.4   -2.7  -21.1 |  22.4 dB
+v10_lfa   idle     |   -0.1  -16.2  -25.5  -51.3 |   -0.2  -13.5  -20.5  -33.2 |   9.3 dB
+v10_lfa   wot80    |   -9.0   -0.6  -22.6  -40.6 |  -27.2   -3.9   -2.5  -17.2 |  17.1 dB
+v12_412   wot3000  |   -2.1   -4.1  -26.6  -30.5 |  -19.0   -0.3  -13.7  -28.9 |  17.7 dB
+v12_412   part25   |   -3.2   -2.8  -23.0  -30.0 |  -10.3   -2.4   -4.9  -22.8 |  16.1 dB
+v12_412   idle     |  -12.4   -0.5  -13.0  -25.4 |  -20.4   -1.0   -7.2  -28.8 |  12.4 dB
+v12_412   wot80    |  -19.0   -0.1  -22.6  -26.0 |  -24.8  -11.1   -0.5  -14.9 |  15.0 dB
+
+level idle -> WOT3000 (dB, post-leveling not applied for mine / engine-sim has its own leveler):
+  i4_vtec   ref 1.4 dB   mine 16.4 dB
+  i6_2jz    ref 11.5 dB   mine 28.2 dB
+  v6_60     ref 9.2 dB   mine 14.6 dB
+  v6_odd    ref 4.9 dB   mine 17.8 dB
+  v8_ls     ref 3.3 dB   mine 28.8 dB
+  v8_f136   ref 3.0 dB   mine 16.3 dB
+  v10_lfa   ref -0.2 dB   mine 17.4 dB
+  v12_412   ref 0.2 dB   mine 2.4 dB
+i4_vtec  n= 4 fire-order=2
+   ref : 1.5:-15 2:-3 2.5:-7 3:-19 3.5:-9 4:0 4.5:-19 6:-17
+   mine: 2:-5 4:0 4.5:-16 6:-21 8:-8 10:-11 12:-11 14:-11
+i6_2jz   n= 6 fire-order=3
+   ref : 3:0 4:-36 6:-31 8:-39 9:-21 12:-36 15:-37 21:-40
+   mine: 3:0 6:-18 6.5:-40 9:-30 9.5:-41 12:-34 18:-40 24:-34
+v6_60    n= 6 fire-order=3
+   ref : 2:-29 2.5:-16 3:0 3.5:-17 4:-32 8:-37 8.5:-33 9:-32
+   mine: 3:0 4:-31 6:-17 9:-18 12:-15 12.5:-31 15:-27 18:-25
+v6_odd   n= 6 fire-order=3
+   ref : 1:-29 1.5:-11 2.5:-13 3:0 3.5:-18 4:-24 4.5:-24 7.5:-28
+   mine: 1.5:-17 3:-6 4.5:0 6:-14 9:-20 12:-15 13.5:-13 16.5:-24
+v8_ls    n= 8 fire-order=4
+   ref : 4:-3 4.5:-15 5:-12 5.5:-5 6.5:-15 8:0 8.5:-9 9:-11
+   mine: 3:-32 4:0 5:-20 6:-33 9:-33 11:-33 13:-23 17:-32
+v8_f136  n= 8 fire-order=4
+   ref : 2.5:-14 3:-11 3.5:-11 4:0 4.5:-18 7.5:-22 8:-8 16:-20
+   mine: 4:-5 6.5:-25 8:-6 11:-22 12:0 14.5:-22 16:-12 24:-26
+v10_lfa  n=10 fire-order=5
+   ref : 1.5:-17 2.5:-11 3:-10 3.5:-7 4:-14 4.5:-21 5:0 10:-15
+   mine: 5:0 8.5:-22 10:-12 11.5:-26 15:-5 17:-28 20:-11 21.5:-28
+v12_412  n=12 fire-order=6
+   ref : 3:0 4:-19 4.5:-12 5:-20 6:-4 7.5:-21 8:-19 9:-11
+   mine: 3.5:-18 6:-11 8.5:-29 12:0 14.5:-29 18:-29 21.5:-28 24:-21
+ALL TESTS OK

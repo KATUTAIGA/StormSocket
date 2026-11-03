@@ -1,0 +1,56 @@
+arch   case                    MAP(kPa)  pPeak(bar)  pEVO(bar)  Tevo(K)  back-pressure(kPa)  判定
+i4     アイドル 800rpm 全閉              38         12        1.5     1417            0.0          OK
+i4     部分負荷 3000rpm 25%            59         32        2.6     1460            0.6          OK
+i4     全開 3000rpm                 100         51        4.6     1504            2.1          OK
+i4     全開 6500rpm                  97         76        5.3     1476           10.8          OK
+i6     アイドル 800rpm 全閉              40         13        1.5     1439            0.0          OK
+i6     部分負荷 3000rpm 25%            60         33        2.6     1494            0.5          OK
+i6     全開 3000rpm                 100         52        4.6     1544            1.7          OK
+i6     全開 6500rpm                  97         80        5.5     1497           10.2          OK
+v8x    アイドル 800rpm 全閉              40         13        1.5     1380            0.0          OK
+v8x    部分負荷 3000rpm 25%            60         34        2.7     1495            0.8          OK
+v8x    全開 3000rpm                 100         53        4.6     1562            2.1          OK
+v8x    全開 6500rpm                  97         79        5.4     1475            9.9          OK
+v12    アイドル 800rpm 全閉              40         13        1.5     1404            0.0          OK
+v12    部分負荷 3000rpm 25%            60         33        2.6     1465            0.5          OK
+v12    全開 3000rpm                 100         51        4.5     1532            1.4          OK
+v12    全開 6500rpm                  97         80        5.5     1496           10.1          OK
+CYCLE ALL OK
+
+case                                       dLow  dMid  dHigh dAir | dAll(dB) centroid(Hz)
+stock                                        0.0   0.0   0.0   0.0 |    0.0      408
+no catalyst                                  4.1   6.1   3.9   5.9 |    5.1      407
+straight muffler                             5.3   7.2   6.0   6.9 |    6.3      445
+straight pipe (no cat/muffler)               3.5  11.7   8.7   9.9 |    9.0      525
+big exhaust (+20% dia)                       0.2   0.0  -2.0  -3.1 |    0.0      361
+long tail pipe (x2)                         -5.3   0.2   1.0  -1.3 |   -1.6      465
+long-tube header 4-2-1 style (ng2,pL .6)    -2.2   0.4   1.6  -1.2 |   -0.6      444
+turbo (NA→turbine in exhaust)               -1.6  -3.2  -3.2  -1.7 |   -2.3      372
+turbo + 1 bar boost                          3.2   3.1   5.8  10.6 |    3.5      552
+throttle 25%                                -5.1  -8.3  -7.5 -13.3 |   -6.4      452
+closed throttle (fuel on)                  -16.9  -5.3 -13.3 -23.1 |   -8.5      342
+2000 rpm WOT                                -9.7  -8.8 -14.8 -14.8 |   -9.5      295
+6500 rpm WOT                               -14.9   4.7   6.6   8.5 |    2.2      814
+--- 期待する向き ---
+OK  触媒レス: 1-4kHz が上がる (+ 3.9 dB)
+OK  ストレートマフラー: 全体と高域が上がる (+ 6.3 / + 6.0 dB)
+OK  直管: 高域が最も大きい
+OK  テールが長い: 管の共鳴が動き、音色が変わる (重心 408 → 465 Hz)
+OK  ヘッダー（長さ・集合）で脈動が変わる (mid 0.4  low -2.2 dB)
+OK  タービンが排気に入る: 高域が落ちて丸くなる ( -3.2 dB)
+OK  過給 1bar: 燃焼圧が上がり排気が大きい (+ 5.8 dB)
+OK  スロットル 25%: 小さい ( -6.4 dB)
+OK  スロットル全閉は更に小さい ( -8.5 dB)
+OK  回転で音量が連続的に変わる (2000rpm -9.5 / 6500rpm + 2.2 dB)
+EFFECTS ALL OK
+
+i3 OK  bad 0 max|ex| 1.17e+4 max|blk| 9.40e+4 minPman kPa 12 maxT 3205 time 2.4s for 90s
+i4 OK  bad 0 max|ex| 1.19e+4 max|blk| 9.61e+4 minPman kPa 12 maxT 3185 time 2.9s for 90s
+b4 OK  bad 0 max|ex| 2.75e+4 max|blk| 9.61e+4 minPman kPa 12 maxT 3424 time 2.7s for 90s
+i6 OK  bad 0 max|ex| 1.20e+4 max|blk| 1.89e+5 minPman kPa 12 maxT 3358 time 3.7s for 90s
+v6o OK  bad 0 max|ex| 1.94e+4 max|blk| 2.18e+5 minPman kPa 12 maxT 3600 time 3.6s for 90s
+v8x OK  bad 0 max|ex| 1.02e+4 max|blk| 2.79e+5 minPman kPa 12 maxT 3131 time 5.9s for 90s
+v8f OK  bad 0 max|ex| 2.18e+4 max|blk| 2.79e+5 minPman kPa 12 maxT 3142 time 4.7s for 90s
+v10 OK  bad 0 max|ex| 1.79e+4 max|blk| 3.67e+5 minPman kPa 12 maxT 3225 time 5.5s for 90s
+v12 OK  bad 0 max|ex| 3.41e+4 max|blk| 4.53e+5 minPman kPa 12 maxT 3252 time 6.0s for 90s
+STRESS ALL OK

@@ -1,0 +1,10 @@
+F_supra_leg_idle.wav               integrated   -43.0 LUFS   LRA   0.0 LU   true-peak         dBFS
+F_supra_px_idle.wav                integrated   -42.9 LUFS   LRA   0.3 LU   true-peak         dBFS
+F_supra_leg_wot3000.wav            integrated   -26.2 LUFS   LRA   0.0 LU   true-peak         dBFS
+F_supra_px_wot3000.wav             integrated   -27.6 LUFS   LRA   0.3 LU   true-peak         dBFS
+F_ls3_leg_idle.wav                 integrated   -40.7 LUFS   LRA   0.0 LU   true-peak         dBFS
+F_ls3_px_idle.wav                  integrated   -41.3 LUFS   LRA   0.2 LU   true-peak         dBFS
+F_ls3_leg_wot3000.wav              integrated   -26.1 LUFS   LRA   0.0 LU   true-peak         dBFS
+F_ls3_px_wot3000.wav               integrated   -26.0 LUFS   LRA   0.2 LU   true-peak         dBFS
+F_supra_leg_lift_als.wav           integrated   -19.9 LUFS   LRA   4.1 LU   true-peak         dBFS
+F_supra_px_lift_als.wav            integrated   -22.3 LUFS   LRA   4.2 LU   true-peak         dBFS

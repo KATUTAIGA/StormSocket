@@ -1,0 +1,1 @@
+{"gr86_leg":"5.1% of RT","gr86_px":"11.4% of RT","supra_leg":"4.2% of RT","supra_px":"12.4% of RT","ls3_leg":"3.8% of RT","ls3_px":"13.7% of RT","c2_lfa_leg":"4.7% of RT","c2_lfa_px":"14.2% of RT","c2_countach21_leg":"4.4% of RT","c2_countach21_px":"15.7% of RT","c2_veyronjbT_leg":"3.5% of RT","c2_veyronjbT_px":"19% of RT"}
