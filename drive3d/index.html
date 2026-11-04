@@ -19398,11 +19398,13 @@ Object.assign(CAB_FIX, {"ek9":{"cl":{"c":[0.3303,0.8123,-0.5972],"n":[0.0,0.3662
 /* 追加の車の運転席の位置・ミラーなど（s13 の Object.assign で上書きされないよう、その後ろで項目ごとに足す） */
 for (const [k, v] of Object.entries({"rs6":{"mir":{"L":{"c":[-0.935,1.041,-0.575],"n":[0.304,0.021,0.952],"w":0.17,"h":0.1},"R":{"c":[0.935,1.041,-0.575],"n":[-0.304,0.021,0.952],"w":0.17,"h":0.1},"room":{"c":[-0.025,1.222,-0.488],"n":[-0.107,-0.062,0.992],"w":0.215,"h":0.055}},"cl":{"c":[-0.3803,0.9243,-0.7282],"n":[0.0003,0.1055,0.9944],"ux":[1.0,0.0,-0.0003],"w":0.354,"h":0.1195}},"nsxlb":{"mir":{"L":{"c":[-0.977,0.834,-0.504],"n":[0.29,-0.06,0.955],"w":0.195,"h":0.105},"R":{"c":[0.959,0.825,-0.528],"n":[-0.29,-0.03,0.956],"w":0.2,"h":0.104},"room":{"c":[-0.022,0.984,-0.461],"n":[-0.274,-0.234,0.933],"w":0.205,"h":0.048}}},"s2000":{"mir":{"L":{"c":[-0.805,0.955,-0.027],"n":[0.457,-0.074,0.886],"w":0.138,"h":0.074},"R":{"c":[0.791,0.955,-0.039],"n":[-0.45,-0.08,0.89],"w":0.14,"h":0.075},"room":{"c":[-0.028,1.13,-0.017],"n":[-0.139,0.01,0.99],"w":0.175,"h":0.037}}},"db8":{"cl":{"mode":"free","c":[0.336,0.855,-0.52],"w":0.3,"h":0.115}}})) CAB_FIX[k] = Object.assign(CAB_FIX[k] || {}, v);
 /* 内装の材質。夕方や夜でも真っ黒につぶれないよう、ごく弱い自己発光（室内に回り込む光の代わり）を持たせる */
+const CK_MATS = [];      // v32: 夜に自己発光を落とす内装の材質
 function mat(color, extra) {
   const m = new T.MeshLambertMaterial(Object.assign({ color }, extra || {}));
-  if (m.emissive && m.emissive.setHex && m.emissive.multiplyScalar) { m.emissive.setHex(color); m.emissive.multiplyScalar(0.3); }
+  if (m.emissive && m.emissive.setHex && m.emissive.multiplyScalar) { m.emissive.setHex(color); m.emissive.multiplyScalar(0.3); m.userData.emi0 = m.emissive.clone(); CK_MATS.push(m); if (CK_MATS.length > 4000) CK_MATS.splice(0, 1000); }
   return m;
 }
+HW.ckNight = function (lampK) { const k = 1 - 0.86 * Math.max(0, Math.min(1, lampK)); if (HW._ckNk === k && HW._ckNn === CK_MATS.length) return; HW._ckNk = k; HW._ckNn = CK_MATS.length; for (const m of CK_MATS) if (m.userData.emi0) m.emissive.copy(m.userData.emi0).multiplyScalar(k); };
 function box(w, h, d, m) { return new T.Mesh(new T.BoxGeometry(w, h, d), m); }
 
 /* 取り込んだ 3D モデルのフロントガラス: ガラスの面のうち、目の前にあって前・上を向く三角形だけを取り出し、
@@ -19498,7 +19500,7 @@ class Cockpit {
     this.every = coarse ? 3 : 2;
     this.mmat = new T.MeshBasicMaterial({ map: this.rt.texture, fog: false });
     this.mirNight = { value: 0 };      // 夜の補正（0 昼 〜 1 夜）。暗い映像を持ち上げる（ガンマ 0.5 + わずかな底上げ）。夜の鏡は、後ろの道・空・街灯がうっすら見える
-    this.mmat.onBeforeCompile = (sh) => { sh.uniforms.uNight = this.mirNight; sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'uniform float uNight;\nvoid main() {').replace('#include <map_fragment>', '#include <map_fragment>\n\tdiffuseColor.rgb = mix(diffuseColor.rgb, pow(max(diffuseColor.rgb, vec3(0.0)), vec3(0.62)) * 0.85 + vec3(0.012, 0.014, 0.022), uNight);'); };
+    this.mmat.onBeforeCompile = (sh) => { sh.uniforms.uNight = this.mirNight; sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'uniform float uNight;\nvoid main() {').replace('#include <map_fragment>', '#include <map_fragment>\n\tdiffuseColor.rgb = mix(diffuseColor.rgb, pow(max(diffuseColor.rgb, vec3(0.0)), vec3(0.88)) * 0.92 + vec3(0.002, 0.002, 0.003), uNight);'); };
     this.mmat.customProgramCacheKey = () => 'mirnight2';
     this.dim = 0;
   }
@@ -19562,7 +19564,7 @@ class Cockpit {
     // ナビ画面: 自発光する液晶（emissive）に、つやのある表面（外の光がうっすら映る）
     const pnd = I.screen === 'none', scrA = pnd ? 1.6 : scrW / scrH;
     this.navi = new HW.Navi(scrA); this.nav = this.navi.canvas; this.navTex = new T.CanvasTexture(this.nav); this.navTex.anisotropy = 4; this.navMesh = null;
-    const scrM = new T.MeshStandardMaterial({ color: 0x030405, emissive: 0xffffff, emissiveMap: this.navTex, emissiveIntensity: 1, roughness: 0.2, metalness: 0.15, fog: false });
+    const scrM = new T.MeshBasicMaterial({ map: this.navTex, color: 0xffffff, fog: false });      // v32: 照明を映さない（白い光の塊が出ない）
     this.scrM = scrM;
     let scrY = dashTop - 0.075, scrZ = rearZ + 0.006, scrTilt = -0.12;
     if (I.screen === 'top' || I.screen === 'wide') { scrY = dashTop + 0.075; scrZ = rearZ - 0.16; scrTilt = -0.1; }
@@ -19763,15 +19765,17 @@ class Cockpit {
       add(box(W - 0.2, 0.05, 0.25, paintM), -ex, dashTop - 0.1, cowlZ - 0.2);
     }
     // ミラー（ルーム、左右）
-    const mirror = (w, h, x, y, z, yaw, u0, u1, v0, v1, housing) => {
+    const mirror = (w, h, x, y, z, yaw, u0, u1, v0, v1, housing, pit) => {
       const geo = new T.PlaneGeometry(w, h);
       const uv = geo.attributes.uv;
       if (uv && uv.array) { const a = uv.array; a[0] = u1; a[1] = v1; a[2] = u0; a[3] = v1; a[4] = u1; a[5] = v0; a[6] = u0; a[7] = v0; uv.needsUpdate = true; }
       const m = new T.Mesh(geo, this.mmat);
-      m.position.set(x, y, z); m.rotation.y = yaw; m.position.z += 0.004; root.add(m);
-      const hs = box(w + 0.014, h + 0.014, 0.025, housing); hs.position.set(x, y, z - 0.012); hs.rotation.y = yaw; root.add(hs);
+      m.rotation.order = 'YXZ'; m.position.set(x, y, z); m.rotation.set(pit || 0, yaw, 0); m.position.z += 0.004; root.add(m);
+      const hs = box(w + 0.014, h + 0.014, 0.025, housing); hs.rotation.order = 'YXZ'; hs.position.set(x, y, z - 0.012); hs.rotation.set(pit || 0, yaw, 0); root.add(hs);
     };
-    mirror(0.27, 0.078, -ex, 0.14, -0.62, 0.42, 0.17, 0.83, 0.2, 0.8, blackM);
+    { const ry = Math.atan2(ex, 0.62), my = Math.min(0.14, c.hdr - 0.09), mz = Math.max(-0.62, -0.46 - 0.08);      // 運転者の目の方へ向ける（左右・上下）
+      mirror(0.27, 0.078, -ex, my, mz, ry, 0.17, 0.83, 0.2, 0.8, blackM, Math.atan2(my, Math.hypot(ex, -mz)));
+      const st = box(0.03, Math.max(0.02, c.hdr - my - 0.035), 0.03, blackM); st.position.set(-ex, (c.hdr + my + 0.035) / 2, mz - 0.03); root.add(st); }      // 天井からの支柱
     {      // ドアミラー: 窓の外・ドアの前端。目からの視線を光線で調べ、ピラーやダッシュに隠されない位置のうち、前寄り・車体寄りを選ぶ。ボディ色の殻と、ドアへの腕を付ける
       const truckM = !!I.truck || /^truck/.test(spec.body || ''), gw = truckM ? 0.2 : 0.17, gh = truckM ? 0.27 : 0.115, beltY0 = -c.belt, hsM = truckM ? blackM : paintM;
       const ovalGeo = (w, h, u0, u1, v0, v1) => { const N = 40, pos = [0, 0, 0], uvs = [(u1 + u0) / 2, (v1 + v0) / 2], idx = [];
@@ -19786,7 +19790,11 @@ class Cockpit {
       for (const sd of [-1, 1]) {
         const cands = []; for (const off of [0.1, 0.14, 0.18, 0.22]) for (const dz of [0.05, 0.14, 0.24, 0.36, 0.5, 0.65, 0.8]) cands.push({ off, dz, k: dz + off * 2 }); cands.sort((a, b) => a.k - b.k);
         let best = null;
-        for (const q of cands) { const c0 = new T.Vector3(sd * (hw + q.off) - ex, beltY0 + (truckM ? 0.2 : 0.1), cowlZ + q.dz), nrm = c0.clone().negate().normalize(), f = vis ? vis(c0, nrm) : 1; if (!best || f > best.f + 1e-6) best = { f, c0, nrm, q }; if (f >= 0.95) break; }
+        const pX = hw - 0.05, pZ = -0.46, pH = c.hdr;      // Aピラー（ダッシュの上端・カウル → 天井の前端）
+        for (const q of cands) { const c0 = new T.Vector3(sd * (hw + q.off) - ex, beltY0 + (truckM ? 0.2 : 0.1), cowlZ + q.dz), nrm = c0.clone().negate().normalize();
+          const tq = (sd * pX - ex) / c0.x, yc = c0.y * tq, zc = c0.z * tq, zp = cowlZ + clamp((yc - dashTop) / Math.max(0.05, pH - dashTop), 0, 1) * (pZ - cowlZ);
+          const sideWin = tq > 0 && tq < 1 && zc > zp + 0.04 && yc > beltY0 + 0.005;      // 目からの視線が、ピラーより後ろ・ベルトラインより上で横の窓を通る
+          const f = (vis ? vis(c0, nrm) : 1) * (sideWin ? 1 : 0.35); if (!best || f > best.f + 1e-6) best = { f, c0, nrm, q }; if (f >= 0.95) break; }
         const { c0, nrm } = best, xa = new T.Vector3().crossVectors(new T.Vector3(0, 1, 0), nrm).normalize(), ya = new T.Vector3().crossVectors(nrm, xa).normalize(), qt = new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(xa, ya, nrm));
         const gl = new T.Mesh(ovalGeo(gw, gh, sd < 0 ? 0.68 : 0.0, sd < 0 ? 1.0 : 0.32, 0.18, 0.84), this.mmat); gl.renderOrder = 2; gl.quaternion.copy(qt); gl.position.copy(c0).addScaledVector(nrm, 0.014); root.add(gl);
         let hg; if (truckM) hg = new T.BoxGeometry(gw + 0.03, gh + 0.03, 0.07); else { hg = new T.CylinderGeometry(1, 0.6, 0.1, 30, 1); hg.rotateX(Math.PI / 2); hg.scale((gw + 0.036) / 2, (gh + 0.036) / 2, 1); }      // 乗用車は、うしろへすぼまる卵形の殻 / トラックは箱形
@@ -19818,7 +19826,7 @@ class Cockpit {
     this.navi = new HW.Navi(nvIn ? clamp(cab.nv.w / cab.nv.h, 1.3, 2.7) : 1.6); this.nav = this.navi.canvas;
     const clW = cab.cl && this.layout ? Math.round(256 * clamp(cab.cl.w / cab.cl.h, 0.6, 4) / 2) * 2 : cab.cl ? Math.round(256 * clamp(cab.cl.w / cab.cl.h, 2, 4.2) / 2) * 2 : 512;
     if (this.cl.width !== clW) { this.cl.width = clW; this.ctex.dispose(); this.ctex = new T.CanvasTexture(this.cl); } this.navTex = new T.CanvasTexture(this.nav); this.navTex.anisotropy = 4;
-    const scrM = this.scrM = new T.MeshStandardMaterial({ color: 0x030405, emissive: 0xffffff, emissiveMap: this.navTex, emissiveIntensity: 1, roughness: 0.2, metalness: 0.15, fog: false });
+    const scrM = this.scrM = new T.MeshBasicMaterial({ map: this.navTex, color: 0xffffff, fog: false });      // v32: 照明を映さない（白い光の塊が出ない）
     // モデルの形から求めた面（メーターの面・中央の画面）: その位置・向き・大きさにぴったり重ねる（cab.cl / cab.nv = { c 中心, n 法線（目の側）, ux 横の向き, w, h }）。
     // 絵の縦横比は変えず、面の中に収まる最大の大きさにする（余りはモデルの面がそのまま見える）
     const onFace = (mat, r, aspect, lift) => {
@@ -20521,11 +20529,11 @@ class Cockpit {
   /* メーターの明るさ（夜は少し落とす）と、後方カメラの描画 */
   render(game, grp, lampK) {
     if (!this.cluster) return;
-    this.cluster.material.color.setScalar(1 - (this.nightDim || 0.12) * lampK); this.night = lampK; if (this.mirNight) this.mirNight.value = clamp(lampK, 0, 1) * (1 - clamp((game.world && game.world.tunnelK) || 0, 0, 1));      // メーターは自発光（夜もほぼ同じ明るさ。照明を点けると少しだけ減光）
+    this.cluster.material.color.setScalar(1 - (this.nightDim || 0.12) * lampK); this.night = lampK; if (HW.ckNight) HW.ckNight(lampK * (1 - 0.7 * clamp((game.world && game.world.tunnelK) || 0, 0, 1))); if (this.mirNight) this.mirNight.value = clamp(lampK, 0, 1) * (1 - clamp((game.world && game.world.tunnelK) || 0, 0, 1));      // メーターは自発光（夜もほぼ同じ明るさ。照明を点けると少しだけ減光）
     this.frame++;
     if (this.frame % 3 === 0) this.drawCluster(game);
     if ((this.frame % 6 === 1 || (this.navi && this.navi.dirty)) && this.nav) this.drawNav(game);
-    if (this.scrM) this.scrM.emissiveIntensity = 1 - 0.3 * lampK;      // 夜は少し減光
+    if (this.scrM) { if (this.scrM.isMeshBasicMaterial) this.scrM.color.setScalar(1 - 0.5 * lampK); else this.scrM.emissiveIntensity = 1 - 0.3 * lampK; }      // 夜は減光（v32: 夜はさらに暗く）      // 夜は少し減光
     if (this.frame % this.every === 0) {
       const r = this.rear, rg = this.rig, gv = grp.visible;
       r.position.set(grp.position.x, grp.position.y + (this.scan ? this.eye.y : this.cfg.ey), grp.position.z);
@@ -21041,9 +21049,9 @@ class World {
     const sd = isMoon ? new T.Vector3(-dir.x, -dir.y, -dir.z) : dir;
     this.sun.position.copy(cam.position).addScaledVector(sd, 300); this.sun.target.position.copy(cam.position);
     this.sun.color.setRGB(...(isMoon ? [0.45, 0.55, 0.9] : k.sun));
-    this.sun.intensity = (isMoon ? 0.22 : k.sunI) * (1 - tk * 0.9) * (1 - 0.62 * gloom);
+    this.sun.intensity = (isMoon ? 0.06 : k.sunI) * (1 - tk * 0.9) * (1 - 0.62 * gloom);
     // フォグ
-    const fogC = new T.Color(...k.hor).multiplyScalar(0.85 - 0.25 * nightK);
+    const fogC = new T.Color(...k.hor).multiplyScalar(0.85 - 0.5 * nightK);
     fogC.lerp(new T.Color(...TL.fog), tk);      // トンネル内の空気は排気でわずかにかすむ（照明の色に染まる）
     // 空気遠近: 晴れた昼は遠くの山や街並みが薄く青みがかってかすむ
     const aer = (1 - nightK) * (1 - tk) * (1 - gloom);
@@ -21424,9 +21432,9 @@ const KS = [
   { a: -2, top: [0.085, 0.14, 0.36], mid: [0.50, 0.32, 0.42], hor: [0.92, 0.44, 0.27], sun: [1, 0.45, 0.22], sunI: 0.10, hemi: 0.39, hemiSky: [0.46, 0.43, 0.64], hemiGnd: [0.25, 0.21, 0.19], mtn: [0.16, 0.13, 0.22] },
   { a: -3.5, top: [0.065, 0.10, 0.29], mid: [0.36, 0.25, 0.40], hor: [0.76, 0.36, 0.29], sun: [1, 0.4, 0.2], sunI: 0.0, hemi: 0.33, hemiSky: [0.40, 0.40, 0.62], hemiGnd: [0.20, 0.18, 0.18], mtn: [0.11, 0.095, 0.17] },
   { a: -6, top: [0.035, 0.06, 0.17], mid: [0.16, 0.15, 0.30], hor: [0.40, 0.24, 0.30], sun: [1, 0.4, 0.2], sunI: 0.0, hemi: 0.21, hemiSky: [0.30, 0.34, 0.58], hemiGnd: [0.12, 0.12, 0.14], mtn: [0.05, 0.05, 0.10] },
-  { a: -9, top: [0.016, 0.03, 0.09], mid: [0.06, 0.07, 0.17], hor: [0.16, 0.14, 0.22], sun: [1, 0.4, 0.2], sunI: 0.0, hemi: 0.13, hemiSky: [0.25, 0.31, 0.55], hemiGnd: [0.08, 0.09, 0.12], mtn: [0.025, 0.03, 0.07] },
-  { a: -12, top: [0.010, 0.018, 0.055], mid: [0.03, 0.045, 0.11], hor: [0.075, 0.08, 0.14], sun: [1, 0.4, 0.2], sunI: 0.0, hemi: 0.088, hemiSky: [0.23, 0.30, 0.53], hemiGnd: [0.065, 0.075, 0.105], mtn: [0.016, 0.021, 0.05] },
-  { a: -18, top: [0.006, 0.011, 0.035], mid: [0.018, 0.03, 0.07], hor: [0.04, 0.055, 0.10], sun: [1, 0.4, 0.2], sunI: 0.0, hemi: 0.066, hemiSky: [0.22, 0.29, 0.52], hemiGnd: [0.06, 0.07, 0.10], mtn: [0.012, 0.017, 0.04] }
+  { a: -9, top: [0.012, 0.022, 0.065], mid: [0.04, 0.05, 0.12], hor: [0.11, 0.10, 0.16], sun: [1, 0.4, 0.2], sunI: 0.0, hemi: 0.075, hemiSky: [0.25, 0.31, 0.55], hemiGnd: [0.07, 0.08, 0.11], mtn: [0.018, 0.022, 0.05] },
+  { a: -12, top: [0.004, 0.007, 0.02], mid: [0.010, 0.015, 0.035], hor: [0.026, 0.03, 0.05], sun: [1, 0.4, 0.2], sunI: 0.0, hemi: 0.03, hemiSky: [0.22, 0.29, 0.52], hemiGnd: [0.06, 0.07, 0.10], mtn: [0.006, 0.008, 0.02] },
+  { a: -18, top: [0.0015, 0.0025, 0.007], mid: [0.004, 0.006, 0.013], hor: [0.010, 0.013, 0.022], sun: [1, 0.4, 0.2], sunI: 0.0, hemi: 0.014, hemiSky: [0.22, 0.29, 0.52], hemiGnd: [0.06, 0.07, 0.10], mtn: [0.003, 0.004, 0.01] }
 ];
 const V3F = ['top', 'mid', 'hor', 'sun', 'hemiSky', 'hemiGnd', 'mtn'];
 function skyKey(alt) {
@@ -21580,8 +21588,8 @@ WP.skyAstro = function (dt, cam) {
   const alt = sun.altApp, k = skyKey(alt), el = alt * D2R, az = sun.az * D2R;
   // 月の明るさ（満月の高い月を 1）。昼間は空が明るいので月明かりは効かない
   const mSin = Math.sin(moon.altApp * D2R), moonLevel = moon.rel * Math.pow(Math.max(mSin, 0), 0.65) * (1 - sstep(-6, 6, alt)) * (1 - 0.8 * gloom), moonVis = sstep(-1.2, 0.6, moon.altApp);
-  for (const key of ['top', 'mid', 'hor']) { const add = key === 'top' ? [0.012, 0.02, 0.045] : key === 'mid' ? [0.025, 0.04, 0.085] : [0.04, 0.06, 0.11]; for (let i = 0; i < 3; i++) k[key][i] += add[i] * moonLevel * (1 - sstep(-4, 2, alt)); }
-  k.hemi += 0.14 * moonLevel; for (let i = 0; i < 3; i++) k.hemiSky[i] = lerp(k.hemiSky[i], [0.32, 0.4, 0.66][i], clamp(moonLevel * 1.4, 0, 0.6) * (1 - sstep(-6, 0, alt)));
+  for (const key of ['top', 'mid', 'hor']) { const add = key === 'top' ? [0.012, 0.02, 0.045] : key === 'mid' ? [0.025, 0.04, 0.085] : [0.04, 0.06, 0.11]; for (let i = 0; i < 3; i++) k[key][i] += add[i] * 0.45 * moonLevel * (1 - sstep(-4, 2, alt)); }
+  k.hemi += 0.03 * moonLevel;      // v32: 月明かりの回り込み（従来 0.14 は明るすぎ） for (let i = 0; i < 3; i++) k.hemiSky[i] = lerp(k.hemiSky[i], [0.32, 0.4, 0.66][i], clamp(moonLevel * 1.4, 0, 0.6) * (1 - sstep(-6, 0, alt)));
   const nightK = sstep(8, -12, alt), lampK = clamp(sstep(7 + gloom * 4, -3, alt) * 1.15, 0, 1);
   // 街あかりと薄明・月明かりで決まる、肉眼の限界等級
   const site = A.siteLimit(ll[0], ll[1]), moonRed = 2.3 * Math.pow(moon.rel, 0.4) * sstep(-4, 22, moon.altApp), lim = Math.min(A.twilightLimit(alt), site - moonRed);
@@ -21612,7 +21620,7 @@ WP.skyApply = function (AS, cam) {
   // 月明かり
   const ml = this.moonL; this.moonDirW.set(...AS.moonDirW);
   ml.position.copy(cam.position).addScaledVector(this.moonDirW, 300); ml.target.position.copy(cam.position);
-  ml.color.setRGB(0.58, 0.67, 0.98); ml.intensity = 0.5 * AS.moonLevel * (1 - (this.tunnelK || 0) * 0.9);
+  ml.color.setRGB(0.58, 0.67, 0.98); ml.intensity = 0.13 * AS.moonLevel * (1 - (this.tunnelK || 0) * 0.9);      // v32: 満月で影がうっすら出る程度
 };
 /* 雲による減光などを掛けたあと、星の透明度をシェーダーへ */
 WP.skyFinish = function (AS) {
