@@ -47265,7 +47265,7 @@ TY5.cfgOf = function (c) {
     fws: (c.chs && c.chs.fws) || 0, esc: !!(c.feat && c.feat.esc), escTh: ph.escTh || 8, drive: c.drive || 'FR' };
   /* 定常のアンダーステア勾配 K [rad/(m/s²)] = m (b/CαF − a/CαR) / wb（荷重に比例するコーナリングパワーなら重量配分だけで決まり、ほぼ 0 になる。
      荷重感度・ロール・駆動の影響は走りながら出る）。舵角の換算に使う（ハンドルの切れ方を、従来の「欲しい横加速度」から決める仕組みのままにする）*/
-  const CaF = 2 * Cs * m * G0 * wf / 2 * (1 - 0.3 * k.kLS), CaR = 2 * Cs * m * G0 * (1 - wf) / 2 * (1 - 0.3 * k.kLS) * 1.06;
+  const CaF = 2 * Cs * m * G0 * wf / 2 * (1 - 0.3 * k.kLS), CaR = 2 * Cs * m * G0 * (1 - wf) / 2 * (1 - 0.3 * k.kLS) * 1.35;      // 後輪の単位荷重あたりの横剛性を前輪より 35% 高く（自動車の一般的なアンダーステア。駆動で後輪の横の力が落ちても、まだアンダーステアに残るように）
   k.CaF = CaF; k.CaR = CaR; k.Kus = m * (b / CaF - a / CaR) / wb;
   k.aPk = Math.atan(1.25 / Cs) / D2R;      // 横力が最大になるすべり角の目安 [°]
   CFG.set(c, k); return k;
@@ -47292,14 +47292,6 @@ TY5.step = function (game, dt, ctx) {
   // アンダーステア勾配は、縦の力（ブレーキ・駆動）で各軸のコーナリングの硬さが落ちるぶん変わる（前のコマの各軸の「横に使える割合」から）
   const kFe = clamp(S.kF || 1, 0.3, 1.1), kRe = clamp(S.kR || 1, 0.3, 1.1), KusE = K.m * (K.b / (K.CaF * kFe) - K.a / (K.CaR * kRe)) / K.wb;
   let dF = ctx.delta + clamp(KusE * ayCmd, -0.15, 0.15);
-  /* 舵の合わせ込み: 運転者は狙った曲がり具合になるまで舵を足す（アンダーステア勾配の見積もりの誤差・ロール・荷重感度のぶん）。
-     両軸に余裕があるときだけ（限界を超えてからは足さない＝曲がらないのは物理）*/
-  { const lim = 0.92 * Math.min(ctx.aF0 || ctx.aF, ctx.aR0 || ctx.aR), ayDes = clamp(ayCmd, -lim, lim), g = v * v / K.wb;
-    const room = (S.satF || 0) < 0.92 && (S.satR || 0) < 0.92 && v > 8;
-    const tMax = Math.min(0.03, 1.5 / Math.max(g, 20));      // 足す舵は横加速度にして 1.5 m/s² ぶんまで
-    S.trim = clamp((S.trim || 0) + (room ? (ayDes - (S.ay || 0)) / Math.max(g, 20) * Math.min(1, dt * 1.5) : -(S.trim || 0) * Math.min(1, dt * 4)), -tMax, tMax);
-    if (ayDes * (S.trim || 0) < 0 && Math.abs(ayDes) > 0.5) S.trim *= 1 - Math.min(1, dt * 2);
-    dF += S.trim; }
   /* カウンターステア: 後ろが流れて車体の横すべり角 β が付くと、前輪を進む向きへ当てる（運転者が自然に行う修正）。自動運転は強く、手動は補助として弱く。
      1 コマごとにしか操作が入らない（画面の更新が遅いほど修正が遅れる）ので、遅れのぶんを補う */
   { const ap = !!(game.AP && game.AP.on) || !!(HW.RAP && game.race && game.race.ap), kcs = ap ? 1.0 : 0.55, kr = (ap ? 0.06 : 0.035) * clamp(dt / 0.016, 1, 3.5);
@@ -47367,7 +47359,7 @@ TY5.step = function (game, dt, ctx) {
       const rho = clamp(Math.abs(fx) / Dx, 0, 1);
       const kap = Math.abs(front ? kapF : kapR), spin = kap > 1.6 * kp ? clamp((kap - 1.6 * kp) / (5 * kp), 0, 0.85) : 0;      // ピークを大きく超えて空転・ロックすると横力はさらに落ちる
       const Fymax = D * (Math.sqrt(Math.max(0, 1 - rho * rho)) * (1 - spin) + 0.06);
-      const Ca = K.Cs * z * (1 - 0.5 * K.kLS * (z / K.Fz0 - 1)), B = Ca / Math.max(1, C * D);
+      const Ca = K.Cs * z * (1 - 0.5 * K.kLS * (z / K.Fz0 - 1)), B = Ca / Math.max(1, C * Math.max(Fymax, 1));      // 初期の傾き（コーナリングの硬さ）は、摩擦円で縦に使った分では減らさない。減るのはピークの横力（Fymax）
       const fy = -Fymax * mf(al[i], B, C);      // 横力（すべり角と逆向き）
       // 車体の座標へ（前輪は舵角ぶん回す）
       const cs = Math.cos(d), sn = Math.sin(d), fxb = fx * cs - fy * sn, fyb = fx * sn + fy * cs;
